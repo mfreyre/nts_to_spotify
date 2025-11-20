@@ -1,0 +1,12 @@
+# Web scraping and HTTP requests
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+
+# Text processing
+unidecode>=1.3.6
+
+# Environment variable management
+python-dotenv>=1.0.0
+
+# Data analysis (optional - for Jupyter notebook)
+pandas>=2.0.0
