@@ -58,15 +58,41 @@ git clone <repository-url>
 cd nts_to_spotify
 ```
 
-2. Install required dependencies:
+2. Create and activate a virtual environment (recommended):
 ```bash
-pip install requests beautifulsoup4 unidecode
+python -m venv venv
+source venv/bin/activate  # On Windows: venv\Scripts\activate
 ```
 
-Required packages:
+3. Install required dependencies:
+```bash
+pip install -r requirements.txt
+```
+
+Required packages (defined in requirements.txt):
 - `requests` - HTTP requests to NTS and Spotify APIs
 - `beautifulsoup4` - HTML parsing
 - `unidecode` - Text normalization (removes accents)
+- `python-dotenv` - Environment variable management
+- `pandas` - Data analysis (optional)
+
+4. Set up environment variables for Spotify:
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and add your Spotify API credentials:
+```bash
+SPOTIFY_CLIENT_ID=your_actual_client_id
+SPOTIFY_CLIENT_SECRET=your_actual_client_secret
+SPOTIFY_REDIRECT_URI=http://localhost:8000/callback/
+```
+
+To get Spotify credentials:
+- Go to https://developer.spotify.com/dashboard
+- Create a new app
+- Copy your Client ID and Client Secret
+- Add `http://localhost:8000/callback/` as a Redirect URI in your app settings
 
 ## Usage
 
@@ -134,17 +160,9 @@ This creates separate files in `by_year/` for easier batch processing.
 
 ⚠️ **Note:** The Spotify integration is currently incomplete but functional through the authorization flow.
 
-1. Set up a Spotify Developer App:
-   - Go to https://developer.spotify.com/dashboard
-   - Create a new app
-   - Note your Client ID and Client Secret
-   - Add `http://localhost:8000/callback/` as a Redirect URI
+1. Ensure you've set up your `.env` file with Spotify credentials (see Installation step 4)
 
-2. Edit `spotify_scripts/spotify_v2.py`:
-   - Replace `YOUR_CLIENT_ID` with your Client ID
-   - Replace `YOUR_CLIENT_SECRET` with your Client Secret
-
-3. Run the script:
+2. Run the script:
 ```bash
 cd spotify_scripts
 python spotify_v2.py
@@ -240,11 +258,13 @@ Check this file if you encounter issues.
 - Text cleaning and normalization
 - CSV export functionality
 - URL tracking system (processed vs. unprocessed)
+- Environment variable configuration with `.env` file
+- Dependency management with `requirements.txt`
 
 ### In Development 🚧
 - **Spotify Integration**: The authorization flow works, but track searching and playlist population needs to be connected to the CSV data
 - **Error Handling**: No retry logic for failed API requests
-- **Configuration Management**: Credentials are hardcoded (should use environment variables)
+- **Rate Limiting**: No protection against API rate limits
 
 ### Future Enhancements 💡
 - Automatic CSV-to-Spotify pipeline
@@ -274,11 +294,11 @@ pip install requests beautifulsoup4 unidecode
 ## Contributing
 
 This is a personal project, but suggestions and improvements are welcome! Areas that need work:
-- Completing the Spotify integration
+- Completing the Spotify integration (connecting CSV data to playlist creation)
 - Adding tests
-- Creating a requirements.txt
-- Better error handling
-- Configuration file support
+- Better error handling and retry logic
+- Rate limiting for API requests
+- Progress bars for batch processing
 
 ## License
 

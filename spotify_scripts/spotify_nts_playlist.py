@@ -1,11 +1,25 @@
 import requests
 import json
+import base64
+import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 # Your Spotify API credentials
-client_id = 'addhere'
-client_secret = 'addhere'
+client_id = os.getenv('SPOTIFY_CLIENT_ID')
+client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
+redirect_uri = os.getenv('SPOTIFY_REDIRECT_URI', 'http://localhost:8000/callback/')
 
-redirect_uri = 'http://localhost:8000/callback/'
+# Validate that credentials are set
+if not client_id or not client_secret:
+    raise ValueError(
+        "Spotify credentials not found. Please create a .env file with:\n"
+        "SPOTIFY_CLIENT_ID=your_client_id\n"
+        "SPOTIFY_CLIENT_SECRET=your_client_secret\n"
+        "See .env.example for template."
+    )
 
 # Step 1: Authorization Request
 auth_url = 'https://accounts.spotify.com/authorize'
