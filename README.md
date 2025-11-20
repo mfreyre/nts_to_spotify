@@ -18,13 +18,19 @@ NTS Radio hosts an incredible collection of DJ mixes and radio shows, but there'
 - 🧹 Clean and normalize track/artist names (removes accents, "feat." annotations, etc.)
 - 📊 Export tracklists to CSV format
 - 🔄 Track which episodes have been processed
+- ✨ **Enrich tracks with 29+ metadata fields from Spotify, Last.fm, and MusicBrainz**
 - 🎧 Spotify playlist creation (partially implemented)
 
 ## Project Structure
 
 ```
 nts_to_spotify/
-├── scripts/                      # NTS scraping and data extraction
+├── nts_show_to_csv.py            # ⭐ Main script - show name to CSV in one command
+├── enrich_tracks.py              # ⭐ Enrich CSV with Spotify/Last.fm/MusicBrainz data
+├── requirements.txt              # Python dependencies
+├── .env.example                  # Environment variable template
+│
+├── scripts/                      # Individual NTS scraping scripts
 │   ├── nts_get_track_list.py    # Extract tracks from a single episode
 │   ├── cli_get_tracks.py        # Batch process episodes (CLI)
 │   ├── multi_get_tracklist.py   # Batch process episodes (interactive)
@@ -96,7 +102,108 @@ To get Spotify credentials:
 
 ## Usage
 
-### Step 1: Discover Episodes from a DJ's Show
+### Quick Start (Recommended)
+
+The easiest way to extract all tracks from an NTS show is using the all-in-one script:
+
+```bash
+python nts_show_to_csv.py <show_name>
+```
+
+Example:
+```bash
+# Extract all tracks from Rachel Grace Almeida's show
+python nts_show_to_csv.py rachel-grace-almeida
+
+# Specify a custom output filename
+python nts_show_to_csv.py miss-modular miss_modular_complete.csv
+```
+
+This single command will:
+1. 🔍 Discover all episodes from the show
+2. 📥 Extract tracks from every episode
+3. 💾 Save everything to a CSV file
+
+The script shows progress in real-time and creates:
+- `<show_name>_complete.csv` - All tracks with episode URLs
+- `nts_show_to_csv.log` - Detailed log file
+
+**Finding the show name:**
+- Go to the show page on NTS (e.g., `https://www.nts.live/shows/rachel-grace-almeida`)
+- The show name is the last part of the URL: `rachel-grace-almeida`
+
+### Data Enrichment (Add Metadata to Your Tracks)
+
+Once you have a CSV of tracks, enrich it with detailed metadata from multiple sources:
+
+```bash
+python enrich_tracks.py <input_csv>
+```
+
+Example:
+```bash
+# Enrich the complete tracklist
+python enrich_tracks.py rachel-grace-almeida_complete.csv
+
+# Specify custom output filename
+python enrich_tracks.py tracks.csv enriched_output.csv
+```
+
+**What you get:**
+
+**From Spotify (19 fields):**
+- Audio features: danceability, energy, tempo, valence, acousticness, instrumentalness, liveness, speechiness
+- Musical properties: key, mode, time signature, loudness
+- Metadata: popularity, duration, album, release date, preview URL, explicit flag
+
+**From Last.fm (4 fields):**
+- Play count across all Last.fm users
+- Total listener count
+- Community tags/genres
+- Last.fm track URL
+
+**From MusicBrainz (6 fields):**
+- Recording ID and metadata
+- Release date and country
+- Community tags
+- Track length
+
+**Example output:**
+```
+============================================================
+Data Sources:
+  Spotify ✓
+  Last.fm ✓
+  MusicBrainz ✓
+
+Processing 892 tracks...
+
+✓ Enrichment complete
+
+Match rates:
+  Spotify: 847/892 (95.0%)
+  Last.fm: 723/892 (81.1%)
+  MusicBrainz: 654/892 (73.3%)
+
+Output file: rachel-grace-almeida_complete_enriched.csv
+============================================================
+```
+
+**Setup for enrichment:**
+1. Spotify credentials are required (already set up in `.env`)
+2. Last.fm API key is optional but recommended:
+   - Create account at https://www.last.fm
+   - Get API key at https://www.last.fm/api/account/create
+   - Add to `.env`: `LASTFM_API_KEY=your_key_here`
+3. MusicBrainz requires no setup (free, no key needed)
+
+The script handles rate limiting automatically and shows real-time progress!
+
+### Advanced Usage (Individual Scripts)
+
+If you need more control over the process, you can use the individual scripts:
+
+#### Step 1: Discover Episodes from a DJ's Show
 
 Use `pull_dj_links.py` to scrape all episode URLs from a specific NTS show:
 
@@ -206,15 +313,60 @@ The `clean_string()` function in scripts/cli_get_tracks.py:19-19 normalizes text
 
 ### CSV Output Format
 
+The consolidated script (`nts_show_to_csv.py`) outputs:
+
+```csv
+TITLE,ARTIST,EPISODE_URL
+song title,artist name,https://www.nts.live/shows/show-name/episodes/episode-1
+another song,another artist,https://www.nts.live/shows/show-name/episodes/episode-1
+```
+
+The enrichment script (`enrich_tracks.py`) adds 29 additional columns:
+
+**Spotify Fields (19):**
+- `spotify_id`, `spotify_popularity`, `spotify_duration_ms`, `spotify_explicit`
+- `spotify_preview_url`, `spotify_album`, `spotify_release_date`
+- `spotify_danceability`, `spotify_energy`, `spotify_key`, `spotify_loudness`
+- `spotify_mode`, `spotify_speechiness`, `spotify_acousticness`
+- `spotify_instrumentalness`, `spotify_liveness`, `spotify_valence`
+- `spotify_tempo`, `spotify_time_signature`
+
+**Last.fm Fields (4):**
+- `lastfm_playcount`, `lastfm_listeners`, `lastfm_tags`, `lastfm_url`
+
+**MusicBrainz Fields (6):**
+- `musicbrainz_id`, `musicbrainz_title`, `musicbrainz_length`
+- `musicbrainz_tags`, `musicbrainz_country`, `musicbrainz_date`
+
+The individual scripts output:
+
 ```csv
 TITLE,ARTIST
 song title,artist name
 another song,another artist
 ```
 
-## Workflow Example
+## Workflow Examples
 
-Complete workflow for archiving a DJ's entire catalog:
+### Simple Workflow (Recommended)
+
+Extract and enrich tracks from a show:
+
+```bash
+# Step 1: Get complete tracklist for a show
+python nts_show_to_csv.py rachel-grace-almeida
+# Output: rachel-grace-almeida_complete.csv with all tracks
+
+# Step 2: Enrich with metadata from Spotify, Last.fm, and MusicBrainz
+python enrich_tracks.py rachel-grace-almeida_complete.csv
+# Output: rachel-grace-almeida_complete_enriched.csv with 29+ additional data fields
+```
+
+**Complete pipeline in 2 commands** - from show name to fully enriched dataset!
+
+### Advanced Workflow
+
+Complete workflow for archiving a DJ's catalog with more control:
 
 ```bash
 # 1. Discover all episodes from a show
@@ -242,12 +394,18 @@ cd ../scripts
 
 ## Logging
 
-The track extraction scripts log all activity to `get_tracklist_logs.txt` including:
+The consolidated script (`nts_show_to_csv.py`) logs to both console and `nts_show_to_csv.log` including:
+- Episode discovery progress
+- Track extraction status
+- HTTP errors and warnings
+- Final statistics
+
+The individual track extraction scripts log to `get_tracklist_logs.txt` including:
 - HTTP request status codes
 - Extracted track and artist names
 - Any errors encountered
 
-Check this file if you encounter issues.
+Check these log files if you encounter issues.
 
 ## Current Status
 
@@ -260,18 +418,20 @@ Check this file if you encounter issues.
 - URL tracking system (processed vs. unprocessed)
 - Environment variable configuration with `.env` file
 - Dependency management with `requirements.txt`
+- **Data enrichment with Spotify, Last.fm, and MusicBrainz**
+- **Rate limiting and API token caching**
 
 ### In Development 🚧
-- **Spotify Integration**: The authorization flow works, but track searching and playlist population needs to be connected to the CSV data
-- **Error Handling**: No retry logic for failed API requests
-- **Rate Limiting**: No protection against API rate limits
+- **Spotify Playlist Creation**: The authorization flow works, but automatic playlist population from CSV needs to be connected
+- **Error Handling**: Limited retry logic for failed API requests
 
 ### Future Enhancements 💡
-- Automatic CSV-to-Spotify pipeline
-- Match rate reporting (how many tracks were found on Spotify)
+- Automatic CSV-to-Spotify playlist pipeline
 - Support for other radio stations (Rinse FM, Red Light Radio, etc.)
 - Playlist cover art from episode artwork
 - Deduplication across multiple episodes
+- Data visualization dashboard (show statistics, genre distributions, audio features)
+- Track recommendation engine based on enriched audio features
 
 ## Troubleshooting
 
@@ -288,8 +448,18 @@ Check this file if you encounter issues.
 ### Dependencies not found
 Make sure you've installed all required packages:
 ```bash
-pip install requests beautifulsoup4 unidecode
+pip install -r requirements.txt
 ```
+
+### Enrichment script shows low match rates
+- **Spotify**: Requires valid credentials in `.env` file
+- **Last.fm**: Check that API key is set in `.env` (optional but improves matches)
+- **MusicBrainz**: No setup needed, but has strict 1 req/sec rate limit (script handles this automatically)
+- Some tracks may not be found due to:
+  - Misspellings in original NTS data
+  - Tracks not available on that platform
+  - Regional availability restrictions
+  - Very obscure or underground releases
 
 ## Contributing
 

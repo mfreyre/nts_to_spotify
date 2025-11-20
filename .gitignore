@@ -44,6 +44,12 @@ ENV/
 # Logs
 *.log
 get_tracklist_logs.txt
+nts_show_to_csv.log
+enrich_tracks.log
+
+# Generated CSV outputs
+*_complete.csv
+*_enriched.csv
 
 # Jupyter Notebook
 .ipynb_checkpoints
