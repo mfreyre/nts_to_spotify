@@ -115,18 +115,8 @@ def search_spotify(title: str, artist: str) -> Optional[Dict]:
         track = tracks[0]
         track_id = track['id']
 
-        time.sleep(SPOTIFY_DELAY)
-
-        # Get audio features
-        features_response = requests.get(
-            f'https://api.spotify.com/v1/audio-features/{track_id}',
-            headers={'Authorization': f'Bearer {token}'}
-        )
-        features_response.raise_for_status()
-        features = features_response.json()
-
-        # Combine track info and audio features
-        return {
+        # Start with basic track info
+        result = {
             'spotify_id': track_id,
             'spotify_popularity': track.get('popularity'),
             'spotify_duration_ms': track.get('duration_ms'),
@@ -134,19 +124,39 @@ def search_spotify(title: str, artist: str) -> Optional[Dict]:
             'spotify_preview_url': track.get('preview_url'),
             'spotify_album': track.get('album', {}).get('name'),
             'spotify_release_date': track.get('album', {}).get('release_date'),
-            'spotify_danceability': features.get('danceability'),
-            'spotify_energy': features.get('energy'),
-            'spotify_key': features.get('key'),
-            'spotify_loudness': features.get('loudness'),
-            'spotify_mode': features.get('mode'),
-            'spotify_speechiness': features.get('speechiness'),
-            'spotify_acousticness': features.get('acousticness'),
-            'spotify_instrumentalness': features.get('instrumentalness'),
-            'spotify_liveness': features.get('liveness'),
-            'spotify_valence': features.get('valence'),
-            'spotify_tempo': features.get('tempo'),
-            'spotify_time_signature': features.get('time_signature'),
         }
+
+        time.sleep(SPOTIFY_DELAY)
+
+        # Try to get audio features (optional - don't fail if this doesn't work)
+        try:
+            features_response = requests.get(
+                f'https://api.spotify.com/v1/audio-features/{track_id}',
+                headers={'Authorization': f'Bearer {token}'}
+            )
+            features_response.raise_for_status()
+            features = features_response.json()
+
+            # Add audio features to result
+            result.update({
+                'spotify_danceability': features.get('danceability'),
+                'spotify_energy': features.get('energy'),
+                'spotify_key': features.get('key'),
+                'spotify_loudness': features.get('loudness'),
+                'spotify_mode': features.get('mode'),
+                'spotify_speechiness': features.get('speechiness'),
+                'spotify_acousticness': features.get('acousticness'),
+                'spotify_instrumentalness': features.get('instrumentalness'),
+                'spotify_liveness': features.get('liveness'),
+                'spotify_valence': features.get('valence'),
+                'spotify_tempo': features.get('tempo'),
+                'spotify_time_signature': features.get('time_signature'),
+            })
+        except Exception as e:
+            logging.debug(f"Could not get audio features for {artist} - {title}: {e}")
+            # Continue without audio features
+
+        return result
 
     except Exception as e:
         logging.debug(f"Spotify search failed for {artist} - {title}: {e}")
