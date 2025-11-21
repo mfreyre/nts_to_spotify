@@ -47,6 +47,7 @@ LASTFM_API_KEY = os.getenv('LASTFM_API_KEY')
 SPOTIFY_DELAY = 0.1
 LASTFM_DELAY = 0.2
 MUSICBRAINZ_DELAY = 1.0  # MusicBrainz requires 1 req/sec
+ACOUSTICBRAINZ_DELAY = 0.5  # Be respectful to AcousticBrainz
 
 # Global token storage
 spotify_token = None
@@ -259,6 +260,77 @@ def search_musicbrainz(title: str, artist: str) -> Optional[Dict]:
         return None
 
 
+def get_acousticbrainz_features(mbid: str) -> Optional[Dict]:
+    """Get audio features from AcousticBrainz using a MusicBrainz ID."""
+    if not mbid:
+        return None
+
+    try:
+        # Get low-level features (rhythm, tonal)
+        low_level_url = f'https://acousticbrainz.org/api/v1/{mbid}/low-level'
+        low_response = requests.get(low_level_url)
+
+        if low_response.status_code != 200:
+            return None
+
+        low_data = low_response.json()
+
+        time.sleep(ACOUSTICBRAINZ_DELAY)
+
+        # Get high-level features (danceability, mood, genre)
+        high_level_url = f'https://acousticbrainz.org/api/v1/{mbid}/high-level'
+        high_response = requests.get(high_level_url)
+
+        high_data = high_response.json() if high_response.status_code == 200 else {}
+
+        # Extract useful features
+        result = {}
+
+        # Rhythm features
+        if 'rhythm' in low_data:
+            rhythm = low_data['rhythm']
+            result['ab_bpm'] = rhythm.get('bpm')
+            result['ab_beats_count'] = rhythm.get('beats_count')
+
+        # Tonal features
+        if 'tonal' in low_data:
+            tonal = low_data['tonal']
+            result['ab_key'] = tonal.get('key_key')
+            result['ab_scale'] = tonal.get('key_scale')
+            result['ab_key_strength'] = tonal.get('key_strength')
+
+        # Low-level audio
+        if 'lowlevel' in low_data:
+            lowlevel = low_data['lowlevel']
+            result['ab_loudness'] = lowlevel.get('average_loudness')
+
+        # High-level features
+        if 'highlevel' in high_data:
+            highlevel = high_data['highlevel']
+
+            # Danceability
+            if 'danceability' in highlevel:
+                result['ab_danceability'] = highlevel['danceability'].get('all', {}).get('danceable')
+
+            # Mood
+            if 'mood_aggressive' in highlevel:
+                result['ab_mood_aggressive'] = highlevel['mood_aggressive'].get('all', {}).get('aggressive')
+            if 'mood_happy' in highlevel:
+                result['ab_mood_happy'] = highlevel['mood_happy'].get('all', {}).get('happy')
+            if 'mood_relaxed' in highlevel:
+                result['ab_mood_relaxed'] = highlevel['mood_relaxed'].get('all', {}).get('relaxed')
+
+            # Voice/Instrumental
+            if 'voice_instrumental' in highlevel:
+                result['ab_voice_instrumental'] = highlevel['voice_instrumental'].get('all', {}).get('instrumental')
+
+        return result if result else None
+
+    except Exception as e:
+        logging.debug(f"AcousticBrainz lookup failed for MBID {mbid}: {e}")
+        return None
+
+
 def enrich_track(title: str, artist: str) -> Dict:
     """Enrich a single track with data from all sources."""
     enriched = {}
@@ -278,6 +350,13 @@ def enrich_track(title: str, artist: str) -> Dict:
     if musicbrainz_data:
         enriched.update(musicbrainz_data)
 
+        # AcousticBrainz (requires MusicBrainz ID)
+        mbid = musicbrainz_data.get('musicbrainz_id')
+        if mbid:
+            acousticbrainz_data = get_acousticbrainz_features(mbid)
+            if acousticbrainz_data:
+                enriched.update(acousticbrainz_data)
+
     return enriched
 
 
@@ -296,6 +375,10 @@ def get_enrichment_columns() -> List[str]:
         # MusicBrainz
         'musicbrainz_id', 'musicbrainz_title', 'musicbrainz_length',
         'musicbrainz_tags', 'musicbrainz_country', 'musicbrainz_date',
+        # AcousticBrainz
+        'ab_bpm', 'ab_beats_count', 'ab_key', 'ab_scale', 'ab_key_strength',
+        'ab_loudness', 'ab_danceability', 'ab_mood_aggressive', 'ab_mood_happy',
+        'ab_mood_relaxed', 'ab_voice_instrumental',
     ]
 
 
@@ -338,6 +421,7 @@ def main():
         apis_available.append("Last.fm ✗ (API key missing)")
 
     apis_available.append("MusicBrainz ✓ (no key needed)")
+    apis_available.append("AcousticBrainz ✓ (no key needed)")
 
     print("Data Sources:")
     for api in apis_available:
@@ -370,7 +454,7 @@ def main():
 
     # Enrich each track
     enriched_tracks = []
-    success_count = {'spotify': 0, 'lastfm': 0, 'musicbrainz': 0}
+    success_count = {'spotify': 0, 'lastfm': 0, 'musicbrainz': 0, 'acousticbrainz': 0}
 
     for i, track in enumerate(tracks, 1):
         title = track.get('TITLE', '')
@@ -387,6 +471,8 @@ def main():
             success_count['lastfm'] += 1
         if any(k.startswith('musicbrainz_') for k in enrichment.keys()):
             success_count['musicbrainz'] += 1
+        if any(k.startswith('ab_') for k in enrichment.keys()):
+            success_count['acousticbrainz'] += 1
 
         # Combine original and enriched data
         enriched_track = {**track, **enrichment}
@@ -414,6 +500,7 @@ def main():
         print(f"  Spotify: {success_count['spotify']}/{len(tracks)} ({success_count['spotify']/len(tracks)*100:.1f}%)")
         print(f"  Last.fm: {success_count['lastfm']}/{len(tracks)} ({success_count['lastfm']/len(tracks)*100:.1f}%)")
         print(f"  MusicBrainz: {success_count['musicbrainz']}/{len(tracks)} ({success_count['musicbrainz']/len(tracks)*100:.1f}%)")
+        print(f"  AcousticBrainz: {success_count['acousticbrainz']}/{len(tracks)} ({success_count['acousticbrainz']/len(tracks)*100:.1f}%)")
         print(f"\nLog file: enrich_tracks.log")
         print(f"{'='*60}\n")
 
