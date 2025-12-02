@@ -24,6 +24,8 @@ import os
 import base64
 from typing import Dict, Optional, List
 from dotenv import load_dotenv
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import threading
 
 # Load environment variables
 load_dotenv()
@@ -450,33 +452,48 @@ def main():
         print("❌ Error: CSV must have TITLE and ARTIST columns")
         sys.exit(1)
 
-    print(f"Processing {len(tracks)} tracks...\n")
+    print(f"Processing {len(tracks)} tracks in parallel (4 workers)...\n")
 
-    # Enrich each track
-    enriched_tracks = []
+    # Enrich each track using parallel processing
+    enriched_tracks = [None] * len(tracks)  # Preserve order
     success_count = {'spotify': 0, 'lastfm': 0, 'musicbrainz': 0, 'acousticbrainz': 0}
+    progress_lock = threading.Lock()
+    completed = 0
 
-    for i, track in enumerate(tracks, 1):
+    def process_track(index, track):
+        """Process a single track and return enriched data."""
+        nonlocal completed
+
         title = track.get('TITLE', '')
         artist = track.get('ARTIST', '')
 
-        print(f"[{i}/{len(tracks)}] {artist} - {title}...", end='\r')
-
         enrichment = enrich_track(title, artist)
 
-        # Track successes
-        if any(k.startswith('spotify_') for k in enrichment.keys()):
-            success_count['spotify'] += 1
-        if any(k.startswith('lastfm_') for k in enrichment.keys()):
-            success_count['lastfm'] += 1
-        if any(k.startswith('musicbrainz_') for k in enrichment.keys()):
-            success_count['musicbrainz'] += 1
-        if any(k.startswith('ab_') for k in enrichment.keys()):
-            success_count['acousticbrainz'] += 1
+        # Track successes (thread-safe)
+        with progress_lock:
+            if any(k.startswith('spotify_') for k in enrichment.keys()):
+                success_count['spotify'] += 1
+            if any(k.startswith('lastfm_') for k in enrichment.keys()):
+                success_count['lastfm'] += 1
+            if any(k.startswith('musicbrainz_') for k in enrichment.keys()):
+                success_count['musicbrainz'] += 1
+            if any(k.startswith('ab_') for k in enrichment.keys()):
+                success_count['acousticbrainz'] += 1
+
+            completed += 1
+            print(f"[{completed}/{len(tracks)}] {artist} - {title}...", end='\r')
 
         # Combine original and enriched data
-        enriched_track = {**track, **enrichment}
-        enriched_tracks.append(enriched_track)
+        return index, {**track, **enrichment}
+
+    # Process tracks in parallel with 4 workers
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        futures = {executor.submit(process_track, i, track): i
+                   for i, track in enumerate(tracks)}
+
+        for future in as_completed(futures):
+            index, enriched_track = future.result()
+            enriched_tracks[index] = enriched_track
 
     print(f"\n✓ Enrichment complete\n")
 
