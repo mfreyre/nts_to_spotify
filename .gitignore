@@ -53,3 +53,6 @@ enrich_tracks.log
 
 # Jupyter Notebook
 .ipynb_checkpoints
+
+# Scratch
+.scratch/
