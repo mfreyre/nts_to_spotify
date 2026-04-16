@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>nts-to-spotify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header>
+    <h1>nts-to-spotify</h1>
+    <div id="auth-status" class="auth pending">Checking Spotify...</div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>1. Generate CSV from NTS</h2>
+      <div class="field">
+        <label>Mode</label>
+        <div class="radio-group">
+          <label><input type="radio" name="mode" value="episode" checked> Single episode (URL)</label>
+          <label><input type="radio" name="mode" value="show"> Full show, one combined CSV (slug)</label>
+          <label><input type="radio" name="mode" value="shows"> Full show, one CSV per episode (slug)</label>
+        </div>
+      </div>
+      <div class="field">
+        <label for="nts-input" id="nts-input-label">Episode URL</label>
+        <input type="text" id="nts-input" placeholder="https://www.nts.live/shows/...">
+      </div>
+      <div class="field" id="output-field">
+        <label for="nts-output">Output filename (optional)</label>
+        <input type="text" id="nts-output" placeholder="auto-generated if empty">
+      </div>
+      <button id="run-nts">Generate CSV</button>
+    </section>
+
+    <section class="card">
+      <h2>2. CSV &rarr; Spotify Playlist</h2>
+      <div class="field">
+        <label for="csv-select">CSV file</label>
+        <div class="row">
+          <select id="csv-select"></select>
+          <button id="refresh-csvs" class="secondary" title="Refresh list">&#8635;</button>
+        </div>
+      </div>
+      <div class="field">
+        <label for="playlist-name">Playlist name</label>
+        <input type="text" id="playlist-name" placeholder="My NTS Playlist">
+      </div>
+      <div class="field">
+        <label for="playlist-desc">Description (optional)</label>
+        <input type="text" id="playlist-desc" placeholder="">
+      </div>
+      <div class="row">
+        <button id="run-spotify">Build Playlist</button>
+        <button id="connect-spotify" class="secondary">Connect Spotify</button>
+      </div>
+    </section>
+
+    <section class="card log-card">
+      <div class="log-header">
+        <h2>Log</h2>
+        <div class="row">
+          <span id="job-status"></span>
+          <button id="stop-job" class="secondary" disabled>Stop</button>
+          <button id="clear-log" class="secondary">Clear</button>
+        </div>
+      </div>
+      <pre id="log"></pre>
+    </section>
+  </main>
+
+  <script src="/app.js"></script>
+</body>
+</html>

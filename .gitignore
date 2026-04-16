@@ -56,3 +56,6 @@ enrich_tracks.log
 
 # Scratch
 .scratch/
+
+# Node
+node_modules/

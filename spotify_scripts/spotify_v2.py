@@ -1,93 +1,228 @@
-import requests
-import json
+import argparse
 import base64
-import webbrowser
+import csv
 import os
+import sys
+import time
+import webbrowser
+from urllib.parse import urlencode
+
+import requests
 from dotenv import load_dotenv
 
-# Load environment variables from .env file
 load_dotenv()
 
-# Your Spotify API credentials
 client_id = os.getenv('SPOTIFY_CLIENT_ID')
 client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
 redirect_uri = os.getenv('SPOTIFY_REDIRECT_URI', 'http://localhost:8000/callback/')
 
-# Validate that credentials are set
-if not client_id or not client_secret:
-    raise ValueError(
-        "Spotify credentials not found. Please create a .env file with:\n"
-        "SPOTIFY_CLIENT_ID=your_client_id\n"
-        "SPOTIFY_CLIENT_SECRET=your_client_secret\n"
-        "See .env.example for template."
+
+def read_csv_tracks(path):
+    """Read a CSV with TITLE,ARTIST columns (case-insensitive)."""
+    tracks = []
+    with open(path, newline='', encoding='utf-8') as f:
+        reader = csv.DictReader(f)
+        field_map = {name.lower(): name for name in reader.fieldnames or []}
+        if 'title' not in field_map or 'artist' not in field_map:
+            raise ValueError(
+                f"CSV must have TITLE and ARTIST columns. Found: {reader.fieldnames}"
+            )
+        title_col, artist_col = field_map['title'], field_map['artist']
+        for row in reader:
+            title = (row.get(title_col) or '').strip()
+            artist = (row.get(artist_col) or '').strip().rstrip(',')
+            if title and artist:
+                tracks.append({'title': title, 'artist': artist})
+    return tracks
+
+
+def _require_oauth_creds():
+    if not client_id or not client_secret:
+        raise ValueError(
+            "Spotify credentials not found. Please create a .env file with:\n"
+            "SPOTIFY_CLIENT_ID=your_client_id\n"
+            "SPOTIFY_CLIENT_SECRET=your_client_secret\n"
+            "See .env.example for template."
+        )
+
+
+def get_user_access_token():
+    """Run the authorization code flow and return an access token."""
+    _require_oauth_creds()
+    auth_params = {
+        'client_id': client_id,
+        'response_type': 'code',
+        'redirect_uri': redirect_uri,
+        'scope': 'playlist-modify-public playlist-modify-private',
+    }
+    auth_url = f'https://accounts.spotify.com/authorize?{urlencode(auth_params)}'
+
+    print('Please authorize this app to access your Spotify account.')
+    print('Opening browser...')
+    webbrowser.open_new(auth_url)
+    print(f'If the browser did not open, visit:\n{auth_url}\n')
+    auth_code = input('Paste the "code" query parameter from the redirect URL: ').strip()
+
+    auth_header = base64.b64encode(
+        f'{client_id}:{client_secret}'.encode('ascii')
+    ).decode('ascii')
+    token_response = requests.post(
+        'https://accounts.spotify.com/api/token',
+        headers={'Authorization': f'Basic {auth_header}'},
+        data={
+            'grant_type': 'authorization_code',
+            'code': auth_code,
+            'redirect_uri': redirect_uri,
+        },
     )
+    token_response.raise_for_status()
+    return token_response.json()['access_token']
 
-# Step 1: Authorization Request
-auth_url = 'https://accounts.spotify.com/authorize'
-auth_params = {
-    'client_id': client_id,
-    'response_type': 'code',
-    'redirect_uri': redirect_uri,
-    'scope': 'playlist-modify-public',
-}
-auth_response = requests.get(auth_url, params=auth_params)
 
-# Step 2: User Authorization
-print('Please authorize this app to access your Spotify account.')
-print('Opening browser...')
-webbrowser.open_new(auth_response.url)
-auth_code = input('Enter the authorization code from the URL: ')
+def _search_request(access_token, query):
+    """Do one search request, handling rate limits with Retry-After."""
+    while True:
+        resp = requests.get(
+            'https://api.spotify.com/v1/search',
+            headers={'Authorization': f'Bearer {access_token}'},
+            params={'q': query, 'type': 'track', 'limit': 1},
+        )
+        if resp.status_code == 429:
+            wait = int(resp.headers.get('Retry-After', '1'))
+            print(f'  rate limited, sleeping {wait}s...', flush=True)
+            time.sleep(wait + 1)
+            continue
+        return resp
 
-# Step 3: Access Token Request
-token_url = 'https://accounts.spotify.com/api/token'
-auth_header = base64.b64encode(f'{client_id}:{client_secret}'.encode('ascii')).decode('ascii')
-token_params = {
-    'grant_type': 'authorization_code',
-    'code': auth_code,
-    'redirect_uri': redirect_uri,
-}
-token_response = requests.post(token_url, headers={'Authorization': f'Basic {auth_header}'}, data=token_params)
 
-# Get the access token and refresh token from the token response
-token_data = token_response.json()
-access_token = token_data['access_token']
-refresh_token = token_data['refresh_token']
+def search_track(access_token, title, artist):
+    """Return a Spotify track URI for (title, artist) or None."""
+    resp = _search_request(access_token, f'track:"{title}" artist:"{artist}"')
+    if resp.status_code == 200:
+        items = resp.json().get('tracks', {}).get('items', [])
+        if items:
+            return items[0]['uri']
 
-# Step 4: Use the access token to create a new playlist
-playlist_name = 'My Playlist'
-playlist_description = 'A playlist of my favorite songs'
-user_response = requests.get('https://api.spotify.com/v1/me', headers={
-    'Authorization': f'Bearer {access_token}',
-})
-user_data = user_response.json()
-user_id = user_data['id']
-playlist_response = requests.post(f'https://api.spotify.com/v1/users/{user_id}/playlists', headers={
-    'Authorization': f'Bearer {access_token}',
-    'Content-Type': 'application/json',
-}, json={
-    'name': playlist_name,
-    'description': playlist_description,
-})
+    # Fallback: loose search without field filters
+    resp = _search_request(access_token, f'{title} {artist}')
+    if resp.status_code != 200:
+        return None
+    items = resp.json().get('tracks', {}).get('items', [])
+    return items[0]['uri'] if items else None
 
-# Get the playlist ID from the playlist response
-playlist_data = playlist_response.json()
-playlist_id = playlist_data['id']
 
-# List of songs and artist names
-song_list = [
-    {
-        'title': 'Song Title 1',
-        'artist': 'Artist Name 1',
-    },
-    {
-        'title': 'Song Title 2',
-        'artist': 'Artist Name 2',
-    },
-    {
-        'title': 'Song Title 3',
-        'artist': 'Artist Name 3',
-    },
-    # Add more songs and artist names as needed
-]
+def create_playlist(access_token, name, description):
+    me = requests.get(
+        'https://api.spotify.com/v1/me',
+        headers={'Authorization': f'Bearer {access_token}'},
+    )
+    me.raise_for_status()
+    user_id = me.json()['id']
 
-print(song_list);
+    resp = requests.post(
+        f'https://api.spotify.com/v1/users/{user_id}/playlists',
+        headers={
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json',
+        },
+        json={'name': name, 'description': description, 'public': False},
+    )
+    resp.raise_for_status()
+    return resp.json()['id']
+
+
+def add_tracks(access_token, playlist_id, uris):
+    """Add a batch of URIs to the playlist (Spotify allows up to 100 per call)."""
+    for i in range(0, len(uris), 100):
+        batch = uris[i:i + 100]
+        resp = requests.post(
+            f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks',
+            headers={
+                'Authorization': f'Bearer {access_token}',
+                'Content-Type': 'application/json',
+            },
+            json={'uris': batch},
+        )
+        resp.raise_for_status()
+
+
+def main():
+    parser = argparse.ArgumentParser(
+        description='Create a Spotify playlist from a CSV with TITLE,ARTIST columns.'
+    )
+    parser.add_argument('--csv', required=True, help='Path to the CSV file')
+    parser.add_argument('--name', required=True, help='Playlist name')
+    parser.add_argument('--description', default='', help='Playlist description')
+    parser.add_argument(
+        '--access-token',
+        default=os.getenv('SPOTIFY_ACCESS_TOKEN'),
+        help='Spotify access token (skips interactive OAuth). '
+             'Can also be set via SPOTIFY_ACCESS_TOKEN env var.',
+    )
+    args = parser.parse_args()
+
+    tracks = read_csv_tracks(args.csv)
+    print(f'Read {len(tracks)} tracks from {args.csv}')
+    if not tracks:
+        print('No tracks to add. Exiting.')
+        return
+
+    access_token = args.access_token or get_user_access_token()
+
+    print(f'Creating playlist "{args.name}"...', flush=True)
+    playlist_id = create_playlist(access_token, args.name, args.description)
+    print(f'Playlist ID: {playlist_id}', flush=True)
+
+    print(f'Searching Spotify for {len(tracks)} tracks...', flush=True)
+    FLUSH_EVERY = 20
+    pending, missing = [], []
+    total_added = 0
+    total = len(tracks)
+    start = time.time()
+    for i, t in enumerate(tracks, 1):
+        uri = search_track(access_token, t['title'], t['artist'])
+        if uri:
+            pending.append(uri)
+            status = 'FOUND    '
+        else:
+            missing.append(t)
+            status = 'NOT FOUND'
+        print(
+            f'[{i}/{total}] {status} {t["title"]} - {t["artist"]}',
+            flush=True,
+        )
+        if len(pending) >= FLUSH_EVERY:
+            add_tracks(access_token, playlist_id, pending)
+            total_added += len(pending)
+            print(
+                f'  --- pushed {len(pending)} tracks to playlist '
+                f'(total added: {total_added}) ---',
+                flush=True,
+            )
+            pending = []
+        if i % 50 == 0:
+            elapsed = time.time() - start
+            rate = i / elapsed if elapsed else 0
+            eta = (total - i) / rate if rate else 0
+            print(
+                f'  --- progress: {i}/{total} '
+                f'(added {total_added}, missing {len(missing)}, '
+                f'{rate:.1f} tracks/s, ETA {eta:.0f}s) ---',
+                flush=True,
+            )
+
+    # Push any remaining tracks.
+    if pending:
+        add_tracks(access_token, playlist_id, pending)
+        total_added += len(pending)
+
+    print(
+        f'\nAdded {total_added}/{len(tracks)} tracks to playlist "{args.name}".'
+    )
+    if missing:
+        print(f'Missing {len(missing)} tracks (see log above).')
+    print(f'Playlist ID: {playlist_id}')
+
+
+if __name__ == '__main__':
+    main()
