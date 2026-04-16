@@ -79,20 +79,50 @@ def get_user_access_token():
     return token_response.json()['access_token']
 
 
-def _search_request(access_token, query):
-    """Do one search request, handling rate limits with Retry-After."""
+def _request_with_retry(method, url, **kwargs):
+    """HTTP request with retries on 429 and transient network errors."""
+    kwargs.setdefault('timeout', 20)
+    attempt = 0
+    max_attempts = 6
     while True:
-        resp = requests.get(
-            'https://api.spotify.com/v1/search',
-            headers={'Authorization': f'Bearer {access_token}'},
-            params={'q': query, 'type': 'track', 'limit': 1},
-        )
+        attempt += 1
+        try:
+            resp = requests.request(method, url, **kwargs)
+        except (requests.ConnectionError, requests.Timeout) as e:
+            if attempt >= max_attempts:
+                raise
+            backoff = min(2 ** attempt, 30)
+            print(
+                f'  network error ({type(e).__name__}), retry {attempt}/{max_attempts} '
+                f'in {backoff}s...',
+                flush=True,
+            )
+            time.sleep(backoff)
+            continue
         if resp.status_code == 429:
             wait = int(resp.headers.get('Retry-After', '1'))
             print(f'  rate limited, sleeping {wait}s...', flush=True)
             time.sleep(wait + 1)
             continue
+        if resp.status_code >= 500 and attempt < max_attempts:
+            backoff = min(2 ** attempt, 30)
+            print(
+                f'  server error {resp.status_code}, retry {attempt}/{max_attempts} '
+                f'in {backoff}s...',
+                flush=True,
+            )
+            time.sleep(backoff)
+            continue
         return resp
+
+
+def _search_request(access_token, query):
+    return _request_with_retry(
+        'GET',
+        'https://api.spotify.com/v1/search',
+        headers={'Authorization': f'Bearer {access_token}'},
+        params={'q': query, 'type': 'track', 'limit': 1},
+    )
 
 
 def search_track(access_token, title, artist):
@@ -112,14 +142,16 @@ def search_track(access_token, title, artist):
 
 
 def create_playlist(access_token, name, description):
-    me = requests.get(
+    me = _request_with_retry(
+        'GET',
         'https://api.spotify.com/v1/me',
         headers={'Authorization': f'Bearer {access_token}'},
     )
     me.raise_for_status()
     user_id = me.json()['id']
 
-    resp = requests.post(
+    resp = _request_with_retry(
+        'POST',
         f'https://api.spotify.com/v1/users/{user_id}/playlists',
         headers={
             'Authorization': f'Bearer {access_token}',
@@ -135,7 +167,8 @@ def add_tracks(access_token, playlist_id, uris):
     """Add a batch of URIs to the playlist (Spotify allows up to 100 per call)."""
     for i in range(0, len(uris), 100):
         batch = uris[i:i + 100]
-        resp = requests.post(
+        resp = _request_with_retry(
+            'POST',
             f'https://api.spotify.com/v1/playlists/{playlist_id}/tracks',
             headers={
                 'Authorization': f'Bearer {access_token}',
