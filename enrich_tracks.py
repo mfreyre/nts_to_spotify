@@ -400,8 +400,10 @@ def main():
     if len(sys.argv) > 2:
         output_file = sys.argv[2]
     else:
-        base = input_file.rsplit('.', 1)[0]
-        output_file = f"{base}_enriched.csv"
+        scratch_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.scratch')
+        base = os.path.basename(input_file).rsplit('.', 1)[0]
+        output_file = os.path.join(scratch_dir, f"{base}_enriched.csv")
+    os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
 
     print(f"\n{'='*60}")
     print(f"Track Data Enrichment")

@@ -10,8 +10,9 @@ import csv
 import glob
 import os
 
-INPUT_DIR = "2026"
-OUTPUT_FILE = "2026_all_tracks.csv"
+SCRATCH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.scratch')
+INPUT_DIR = os.path.join(SCRATCH_DIR, "2026")
+OUTPUT_FILE = os.path.join(SCRATCH_DIR, "2026_all_tracks.csv")
 HEADER = ["DJ", "SHOW", "TITLE", "ARTIST"]
 
 

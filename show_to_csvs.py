@@ -23,6 +23,8 @@ from bs4 import BeautifulSoup
 from unidecode import unidecode
 from typing import List, Dict, Tuple
 
+SCRATCH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.scratch')
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s %(levelname)s %(message)s',
@@ -178,7 +180,7 @@ def main():
     print(f"Found {len(episodes)} episodes for: {show_name}\n")
 
     # Create output directory
-    output_dir = show_slug
+    output_dir = os.path.join(SCRATCH_DIR, show_slug)
     os.makedirs(output_dir, exist_ok=True)
     print(f"Output directory: {output_dir}/\n")
 

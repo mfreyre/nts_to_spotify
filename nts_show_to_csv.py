@@ -18,10 +18,13 @@ import json
 import csv
 import re
 import sys
+import os
 import logging
 from bs4 import BeautifulSoup
 from unidecode import unidecode
 from typing import List, Dict
+
+SCRATCH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.scratch')
 
 # Set up logging
 logging.basicConfig(
@@ -202,7 +205,11 @@ def main():
         sys.exit(1)
 
     show_name = sys.argv[1]
-    output_file = sys.argv[2] if len(sys.argv) > 2 else f"{show_name}_complete.csv"
+    if len(sys.argv) > 2:
+        output_file = sys.argv[2]
+    else:
+        output_file = os.path.join(SCRATCH_DIR, f"{show_name}_complete.csv")
+    os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
 
     print(f"\n{'='*60}")
     print(f"NTS Show to CSV - Complete Tracklist Extractor")

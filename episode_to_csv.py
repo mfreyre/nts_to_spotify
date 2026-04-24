@@ -14,9 +14,12 @@ import requests
 import csv
 import re
 import sys
+import os
 from bs4 import BeautifulSoup
 from unidecode import unidecode
 from typing import List, Dict
+
+SCRATCH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.scratch')
 
 
 def clean_string(s: str) -> str:
@@ -102,9 +105,10 @@ def episode_to_csv(episode_url: str, output_file: str = None) -> str:
         # Extract episode name from URL
         match = re.search(r'/episodes/([^/]+)/?$', episode_url)
         if match:
-            output_file = f"{match.group(1)}.csv"
+            output_file = os.path.join(SCRATCH_DIR, f"{match.group(1)}.csv")
         else:
-            output_file = "nts_tracks.csv"
+            output_file = os.path.join(SCRATCH_DIR, "nts_tracks.csv")
+    os.makedirs(os.path.dirname(os.path.abspath(output_file)), exist_ok=True)
 
     print(f"Fetching tracks from: {episode_url}")
     tracks = extract_tracks_from_url(episode_url)

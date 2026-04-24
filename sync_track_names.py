@@ -13,12 +13,15 @@ Usage:
 
 import argparse
 import csv
+import os
 import sys
 import unicodedata
 from collections import defaultdict
 from difflib import SequenceMatcher
 
 import psycopg2
+
+SCRATCH_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.scratch')
 
 DB_CONFIG = {
     "host": "localhost",
@@ -290,11 +293,14 @@ def main():
                   f'[{m["nts_artist"]}] (sim: {m["song_sim"]:.2f})')
 
     # Write CSVs
-    write_csv("sync_report.csv", to_apply)
-    print(f"\nWrote sync_report.csv ({len(to_apply)} changes)")
+    os.makedirs(SCRATCH_DIR, exist_ok=True)
+    report_path = os.path.join(SCRATCH_DIR, "sync_report.csv")
+    review_path = os.path.join(SCRATCH_DIR, "sync_review.csv")
+    write_csv(report_path, to_apply)
+    print(f"\nWrote {report_path} ({len(to_apply)} changes)")
 
-    write_csv("sync_review.csv", low)
-    print(f"Wrote sync_review.csv ({len(low)} skipped for review)")
+    write_csv(review_path, low)
+    print(f"Wrote {review_path} ({len(low)} skipped for review)")
 
     if args.apply:
         print(f"\nApplying {len(to_apply)} corrections...")
