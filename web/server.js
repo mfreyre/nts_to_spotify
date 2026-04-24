@@ -18,12 +18,23 @@ if (!CLIENT_ID || !CLIENT_SECRET) {
   process.exit(1);
 }
 
+// YouTube OAuth (optional — server still starts without these)
+const YT_CLIENT_ID = process.env.YOUTUBE_CLIENT_ID;
+const YT_CLIENT_SECRET = process.env.YOUTUBE_CLIENT_SECRET;
+const YT_REDIRECT_URI = process.env.YOUTUBE_REDIRECT_URI || `http://127.0.0.1:${PORT}/yt-callback`;
+const YT_SCOPE = 'https://www.googleapis.com/auth/youtube';
+const ytConfigured = Boolean(YT_CLIENT_ID && YT_CLIENT_SECRET);
+if (!ytConfigured) {
+  console.warn('YouTube credentials not set — YouTube features will be disabled.');
+}
+
 const app = express();
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// In-memory single-user token store.
+// In-memory single-user token stores.
 let tokenStore = { accessToken: null, refreshToken: null, expiresAt: 0 };
+let ytTokenStore = { accessToken: null, refreshToken: null, expiresAt: 0 };
 
 // Job registry: jobId -> { proc, lines: [], done: false, clients: Set<res> }.
 const jobs = new Map();
@@ -116,9 +127,93 @@ app.get('/api/auth/status', async (req, res) => {
   });
 });
 
+// ---------- YouTube OAuth ----------
+
+app.get('/api/auth/youtube', (req, res) => {
+  if (!ytConfigured) return res.status(400).json({ error: 'YouTube not configured' });
+  const params = new URLSearchParams({
+    client_id: YT_CLIENT_ID,
+    response_type: 'code',
+    redirect_uri: YT_REDIRECT_URI,
+    scope: YT_SCOPE,
+    access_type: 'offline',
+    prompt: 'consent',
+  });
+  res.redirect(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
+});
+
+app.get('/yt-callback', async (req, res) => {
+  const { code, error } = req.query;
+  if (error) return res.status(400).send(`Google returned error: ${error}`);
+  if (!code) return res.status(400).send('Missing code parameter');
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: YT_REDIRECT_URI,
+      client_id: YT_CLIENT_ID,
+      client_secret: YT_CLIENT_SECRET,
+    });
+    const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body,
+    });
+    if (!tokenRes.ok) {
+      const t = await tokenRes.text();
+      return res.status(500).send(`YouTube token exchange failed: ${t}`);
+    }
+    const data = await tokenRes.json();
+    ytTokenStore = {
+      accessToken: data.access_token,
+      refreshToken: data.refresh_token || ytTokenStore.refreshToken,
+      expiresAt: Date.now() + (data.expires_in - 30) * 1000,
+    };
+    res.redirect('/?ytauth=ok');
+  } catch (e) {
+    res.status(500).send(`YouTube OAuth error: ${e.message}`);
+  }
+});
+
+async function refreshYtAccessToken() {
+  if (!ytTokenStore.refreshToken || !ytConfigured) return null;
+  const body = new URLSearchParams({
+    grant_type: 'refresh_token',
+    refresh_token: ytTokenStore.refreshToken,
+    client_id: YT_CLIENT_ID,
+    client_secret: YT_CLIENT_SECRET,
+  });
+  const r = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body,
+  });
+  if (!r.ok) return null;
+  const d = await r.json();
+  ytTokenStore.accessToken = d.access_token;
+  ytTokenStore.expiresAt = Date.now() + (d.expires_in - 30) * 1000;
+  if (d.refresh_token) ytTokenStore.refreshToken = d.refresh_token;
+  return ytTokenStore.accessToken;
+}
+
+async function getValidYtAccessToken() {
+  if (!ytTokenStore.accessToken) return null;
+  if (Date.now() < ytTokenStore.expiresAt) return ytTokenStore.accessToken;
+  return refreshYtAccessToken();
+}
+
+app.get('/api/auth/yt-status', async (req, res) => {
+  const token = await getValidYtAccessToken();
+  res.json({
+    configured: ytConfigured,
+    authenticated: Boolean(token),
+  });
+});
+
 // ---------- CSV listing ----------
 
 function listCsvFiles() {
+  const scratchDir = path.join(REPO_ROOT, '.scratch');
   const results = [];
   const visit = (dir, relDir) => {
     let entries;
@@ -128,19 +223,18 @@ function listCsvFiles() {
       return;
     }
     for (const entry of entries) {
-      if (entry.name.startsWith('.') && entry.name !== '.scratch') continue;
-      if (entry.name === 'node_modules' || entry.name === 'web') continue;
+      if (entry.name.startsWith('.')) continue;
       const abs = path.join(dir, entry.name);
       const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
         visit(abs, rel);
       } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.csv')) {
         const stat = fs.statSync(abs);
-        results.push({ path: rel, size: stat.size, mtime: stat.mtimeMs });
+        results.push({ path: `.scratch/${rel}`, size: stat.size, mtime: stat.mtimeMs });
       }
     }
   };
-  visit(REPO_ROOT, '');
+  visit(scratchDir, '');
   results.sort((a, b) => b.mtime - a.mtime);
   return results;
 }
@@ -223,6 +317,34 @@ app.post('/api/run/spotify', async (req, res) => {
       '--description', description || '',
     ],
     { SPOTIFY_ACCESS_TOKEN: token },
+  );
+  res.json({ jobId });
+});
+
+app.post('/api/run/youtube', async (req, res) => {
+  if (!ytConfigured) {
+    return res.status(400).json({ error: 'YouTube not configured on server' });
+  }
+  const { csv, name, description } = req.body || {};
+  if (!csv || !name) {
+    return res.status(400).json({ error: 'csv and name are required' });
+  }
+  const token = await getValidYtAccessToken();
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated with YouTube' });
+  }
+  const csvAbs = path.resolve(REPO_ROOT, csv);
+  if (!csvAbs.startsWith(REPO_ROOT) || !fs.existsSync(csvAbs)) {
+    return res.status(400).json({ error: 'CSV not found in repo' });
+  }
+  const jobId = spawnPython(
+    [
+      'spotify_scripts/youtube_v2.py',
+      '--csv', csv,
+      '--name', name,
+      '--description', description || '',
+    ],
+    { YOUTUBE_ACCESS_TOKEN: token },
   );
   res.json({ jobId });
 });

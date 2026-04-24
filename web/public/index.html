@@ -18,7 +18,10 @@
 
   <header>
     <h1><span class="logo-main">nts</span><span class="logo-arrow">&#8594;</span><span class="logo-sub">spotify</span></h1>
-    <div id="auth-status" class="auth pending">checking spotify...</div>
+    <div class="auth-pills">
+      <div id="auth-status" class="auth pending">checking spotify...</div>
+      <div id="yt-auth-status" class="auth pending">checking youtube...</div>
+    </div>
   </header>
 
   <main>
@@ -46,6 +49,13 @@
     <section class="card card-pink">
       <h2>build the playlist</h2>
       <div class="field">
+        <label>platform</label>
+        <div class="radio-group">
+          <label><input type="radio" name="platform" value="spotify" checked> Spotify</label>
+          <label><input type="radio" name="platform" value="youtube" id="yt-radio"> YouTube</label>
+        </div>
+      </div>
+      <div class="field">
         <label for="csv-select">pick a csv</label>
         <div class="row">
           <select id="csv-select"></select>
@@ -61,8 +71,9 @@
         <input type="text" id="playlist-desc" placeholder="">
       </div>
       <div class="row">
-        <button id="run-spotify">build playlist &rarr;</button>
+        <button id="run-playlist">build playlist &rarr;</button>
         <button id="connect-spotify" class="secondary">connect spotify</button>
+        <button id="connect-youtube" class="secondary" style="display:none">connect youtube</button>
       </div>
     </section>
 

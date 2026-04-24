@@ -1,15 +1,19 @@
 const $ = (sel) => document.querySelector(sel);
 
 const authStatusEl = $('#auth-status');
+const ytAuthStatusEl = $('#yt-auth-status');
 const csvSelect = $('#csv-select');
 const logEl = $('#log');
 const jobStatusEl = $('#job-status');
 const stopBtn = $('#stop-job');
 const clearBtn = $('#clear-log');
 const connectBtn = $('#connect-spotify');
-const runSpotifyBtn = $('#run-spotify');
+const connectYtBtn = $('#connect-youtube');
+const runPlaylistBtn = $('#run-playlist');
 const runNtsBtn = $('#run-nts');
 const refreshCsvsBtn = $('#refresh-csvs');
+const ytRadio = $('#yt-radio');
+const platformRadios = document.querySelectorAll('input[name="platform"]');
 
 let currentJobId = null;
 let currentSource = null;
@@ -38,6 +42,58 @@ async function refreshAuth() {
 connectBtn.addEventListener('click', () => {
   window.location.href = '/api/auth/spotify';
 });
+
+// ---------- YouTube auth status ----------
+
+async function refreshYtAuth() {
+  try {
+    const r = await fetch('/api/auth/yt-status');
+    const d = await r.json();
+    if (!d.configured) {
+      ytAuthStatusEl.textContent = 'YouTube not configured';
+      ytAuthStatusEl.className = 'auth disabled';
+      ytRadio.disabled = true;
+      ytRadio.parentElement.style.opacity = '0.4';
+      return;
+    }
+    if (d.authenticated) {
+      ytAuthStatusEl.textContent = 'YouTube connected';
+      ytAuthStatusEl.className = 'auth ok';
+      connectYtBtn.textContent = 'Reconnect YouTube';
+    } else {
+      ytAuthStatusEl.textContent = 'Not connected to YouTube';
+      ytAuthStatusEl.className = 'auth bad';
+      connectYtBtn.textContent = 'Connect YouTube';
+    }
+  } catch {
+    ytAuthStatusEl.textContent = 'YT auth check failed';
+    ytAuthStatusEl.className = 'auth bad';
+  }
+}
+
+connectYtBtn.addEventListener('click', () => {
+  window.location.href = '/api/auth/youtube';
+});
+
+// ---------- Platform toggle ----------
+
+function getSelectedPlatform() {
+  return document.querySelector('input[name="platform"]:checked').value;
+}
+
+function updatePlatformUI() {
+  const platform = getSelectedPlatform();
+  if (platform === 'youtube') {
+    connectBtn.style.display = 'none';
+    connectYtBtn.style.display = '';
+  } else {
+    connectBtn.style.display = '';
+    connectYtBtn.style.display = 'none';
+  }
+}
+
+platformRadios.forEach((r) => r.addEventListener('change', updatePlatformUI));
+updatePlatformUI();
 
 // ---------- CSV listing ----------
 
@@ -205,9 +261,10 @@ runNtsBtn.addEventListener('click', async () => {
   }
 });
 
-// ---------- Spotify playlist form ----------
+// ---------- Playlist form (Spotify or YouTube) ----------
 
-runSpotifyBtn.addEventListener('click', async () => {
+runPlaylistBtn.addEventListener('click', async () => {
+  const platform = getSelectedPlatform();
   const csv = csvSelect.value;
   const name = $('#playlist-name').value.trim();
   const description = $('#playlist-desc').value.trim();
@@ -219,8 +276,9 @@ runSpotifyBtn.addEventListener('click', async () => {
     alert('Please enter a playlist name');
     return;
   }
+  const endpoint = platform === 'youtube' ? '/api/run/youtube' : '/api/run/spotify';
   try {
-    const r = await fetch('/api/run/spotify', {
+    const r = await fetch(endpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ csv, name, description }),
@@ -228,7 +286,8 @@ runSpotifyBtn.addEventListener('click', async () => {
     const d = await r.json();
     if (!r.ok) {
       if (r.status === 401) {
-        alert('Not connected to Spotify. Click "Connect Spotify" first.');
+        const svc = platform === 'youtube' ? 'YouTube' : 'Spotify';
+        alert(`Not connected to ${svc}. Click "Connect ${svc}" first.`);
       } else {
         alert(d.error || 'Failed to start job');
       }
@@ -244,10 +303,22 @@ runSpotifyBtn.addEventListener('click', async () => {
 // ---------- Init ----------
 
 refreshAuth();
+refreshYtAuth();
 loadCsvs();
 
-// If we just came back from the OAuth callback, strip the query param.
+// If we just came back from the Spotify OAuth callback, strip the query param.
 if (new URLSearchParams(location.search).get('auth') === 'ok') {
   history.replaceState(null, '', '/');
   refreshAuth();
+}
+
+// If we just came back from the YouTube OAuth callback, auto-select YouTube.
+if (new URLSearchParams(location.search).get('ytauth') === 'ok') {
+  history.replaceState(null, '', '/');
+  refreshYtAuth();
+  const ytOpt = document.querySelector('input[name="platform"][value="youtube"]');
+  if (ytOpt && !ytOpt.disabled) {
+    ytOpt.checked = true;
+    updatePlatformUI();
+  }
 }
