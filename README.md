@@ -1,6 +1,6 @@
 # NTS Radio to Spotify Playlist Automation
 
-A Python-based tool for extracting track listings from [NTS Radio](https://www.nts.live/) episodes and creating corresponding Spotify playlists. This project automates the process of capturing DJ-curated music from NTS shows and adding them to your Spotify library.
+A Python-based tool for extracting track listings from [NTS Radio](https://www.nts.live/) episodes and creating corresponding Spotify or YouTube playlists. This project automates the process of capturing DJ-curated music from NTS shows and adding them to your library.
 
 ## Overview
 
@@ -9,7 +9,7 @@ NTS Radio hosts an incredible collection of DJ mixes and radio shows, but there'
 1. **Discovering** all episodes from a specific NTS Radio show
 2. **Extracting** track listings from episode pages
 3. **Cleaning** and normalizing the track/artist data
-4. **Creating** Spotify playlists with the extracted tracks (in development)
+4. **Creating** Spotify or YouTube playlists with the extracted tracks
 
 ## Features
 
@@ -19,7 +19,8 @@ NTS Radio hosts an incredible collection of DJ mixes and radio shows, but there'
 - 📊 Export tracklists to CSV format
 - 🔄 Track which episodes have been processed
 - ✨ **Enrich tracks with 29+ metadata fields from Spotify, Last.fm, and MusicBrainz**
-- 🎧 Spotify playlist creation (partially implemented)
+- 🎧 Spotify playlist creation
+- 📺 YouTube playlist creation
 
 ## Project Structure
 
@@ -42,9 +43,10 @@ nts_to_spotify/
 │   ├── read_urls.txt            # Processed episode URLs
 │   └── by_year/                 # Episode URLs organized by year
 │
-├── spotify_scripts/              # Spotify API integration
+├── spotify_scripts/              # Playlist creation (Spotify & YouTube)
 │   ├── spotify_nts_playlist.py  # Spotify playlist creation (v1)
-│   └── spotify_v2.py            # Improved Spotify integration (v2)
+│   ├── spotify_v2.py            # Spotify playlist creation (v2)
+│   └── youtube_v2.py            # YouTube playlist creation
 │
 ├── unread_csvs/                  # CSVs not yet uploaded to Spotify
 ├── read_csvss/                   # CSVs already uploaded to Spotify
@@ -54,7 +56,8 @@ nts_to_spotify/
 ## Prerequisites
 
 - Python 3.x
-- A Spotify Developer account (for playlist creation)
+- A Spotify Developer account (for Spotify playlists)
+- A Google Cloud project with the YouTube Data API v3 enabled (for YouTube playlists, optional)
 
 ## Installation
 
@@ -99,6 +102,39 @@ To get Spotify credentials:
 - Create a new app
 - Copy your Client ID and Client Secret
 - Add `http://localhost:8000/callback/` as a Redirect URI in your app settings
+
+### YouTube Setup (Optional)
+
+To create YouTube playlists, you need Google Cloud OAuth credentials:
+
+1. Go to [Google Cloud Console](https://console.cloud.google.com/) and create a project (or select an existing one)
+2. Enable the **YouTube Data API v3**:
+   - Navigate to **APIs & Services > Library**
+   - Search for "YouTube Data API v3" and click **Enable**
+3. Configure the **OAuth consent screen**:
+   - Go to **APIs & Services > OAuth consent screen**
+   - Choose **External** user type
+   - Fill in the required fields (app name, support email)
+   - On the **Scopes** step, no scopes need to be added manually
+   - Under **Test users** (or **Audience**), add your Google email address
+   - This is required while the app is in "Testing" mode — only listed test users can authorize
+4. Create OAuth credentials:
+   - Go to **APIs & Services > Credentials**
+   - Click **Create Credentials > OAuth client ID**
+   - Application type: **Web application**
+   - Under **Authorized redirect URIs**, add: `http://127.0.0.1:4200/yt-callback`
+   - Click **Create**
+5. Add the credentials to your `.env`:
+   ```
+   YOUTUBE_CLIENT_ID=your_client_id
+   YOUTUBE_CLIENT_SECRET=your_client_secret
+   YOUTUBE_REDIRECT_URI=http://127.0.0.1:4200/yt-callback
+   ```
+6. Restart the web server
+
+**Quota note:** The YouTube Data API has a daily limit of 10,000 units. A 30-track playlist costs ~4,550 units (search = 100/track, add = 50/track, create = 50). The script prints a quota estimate before starting.
+
+If YouTube credentials are not set, the server still starts normally — the YouTube option will appear grayed out in the web UI.
 
 ## Usage
 
@@ -263,23 +299,25 @@ python sort_urls.py
 
 This creates separate files in `by_year/` for easier batch processing.
 
-### Step 4: Create Spotify Playlists
+### Step 4: Create Playlists (Spotify or YouTube)
 
-⚠️ **Note:** The Spotify integration is currently incomplete but functional through the authorization flow.
+**Via the web UI (recommended):**
+1. Start the server: `cd web && node server.js`
+2. Open `http://127.0.0.1:4200`
+3. Connect to Spotify or YouTube using the buttons in the UI
+4. Select a CSV, choose your platform, name your playlist, and click "build playlist"
 
-1. Ensure you've set up your `.env` file with Spotify credentials (see Installation step 4)
-
-2. Run the script:
+**Via CLI (Spotify):**
 ```bash
-cd spotify_scripts
-python spotify_v2.py
+python spotify_scripts/spotify_v2.py --csv path/to/tracks.csv --name "My Playlist"
 ```
 
-The script will:
-- Open your browser for Spotify authorization
-- Create a new playlist
-- Search for tracks from your CSV (needs to be integrated)
-- Add found tracks to the playlist
+**Via CLI (YouTube):**
+```bash
+python spotify_scripts/youtube_v2.py --csv path/to/tracks.csv --name "My Playlist" --access-token YOUR_TOKEN
+```
+
+Both scripts output `FOUND`/`NOT FOUND` for each track and print a clickable playlist URL at the end.
 
 ### Step 5: Archive Processed Data
 
@@ -421,12 +459,7 @@ Check these log files if you encounter issues.
 - **Data enrichment with Spotify, Last.fm, and MusicBrainz**
 - **Rate limiting and API token caching**
 
-### In Development 🚧
-- **Spotify Playlist Creation**: The authorization flow works, but automatic playlist population from CSV needs to be connected
-- **Error Handling**: Limited retry logic for failed API requests
-
 ### Future Enhancements 💡
-- Automatic CSV-to-Spotify playlist pipeline
 - Support for other radio stations (Rinse FM, Red Light Radio, etc.)
 - Playlist cover art from episode artwork
 - Deduplication across multiple episodes
@@ -478,7 +511,8 @@ This project is for personal use. Please respect NTS Radio's terms of service an
 
 - [NTS Radio](https://www.nts.live/) for providing incredible radio content
 - [Spotify Web API](https://developer.spotify.com/documentation/web-api/) for playlist management
+- [YouTube Data API v3](https://developers.google.com/youtube/v3/) for YouTube playlist creation
 
 ---
 
-**Note:** This tool is not affiliated with NTS Radio or Spotify. Use responsibly and respect rate limits.
+**Note:** This tool is not affiliated with NTS Radio, Spotify, or YouTube. Use responsibly and respect rate limits.
