@@ -125,16 +125,36 @@ def _search_request(access_token, query):
     )
 
 
+def _normalize_for_search(s):
+    """Remove quotes, ampersands, and other special symbols that hurt Spotify search."""
+    import re
+    # Remove quotes (single, double, fancy)
+    s = re.sub(r"""[\"'\u2018\u2019\u201c\u201d]""", '', s)
+    # Replace ampersands with space
+    s = s.replace('&', ' ')
+    # Remove other special symbols that aren't useful for search
+    s = re.sub(r'[^\w\s\-]', ' ', s)
+    # Collapse whitespace
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
+
+
 def search_track(access_token, title, artist):
     """Return a Spotify track URI for (title, artist) or None."""
-    resp = _search_request(access_token, f'track:"{title}" artist:"{artist}"')
+    clean_title = _normalize_for_search(title)
+    clean_artist = _normalize_for_search(artist)
+
+    if clean_title != title or clean_artist != artist:
+        print(f'  normalized: "{clean_title}" - "{clean_artist}"', flush=True)
+
+    resp = _search_request(access_token, f'track:"{clean_title}" artist:"{clean_artist}"')
     if resp.status_code == 200:
         items = resp.json().get('tracks', {}).get('items', [])
         if items:
             return items[0]['uri']
 
     # Fallback: loose search without field filters
-    resp = _search_request(access_token, f'{title} {artist}')
+    resp = _search_request(access_token, f'{clean_title} {clean_artist}')
     if resp.status_code != 200:
         return None
     items = resp.json().get('tracks', {}).get('items', [])
@@ -254,7 +274,7 @@ def main():
     )
     if missing:
         print(f'Missing {len(missing)} tracks (see log above).')
-    print(f'Playlist ID: {playlist_id}')
+    print(f'Playlist URL: https://open.spotify.com/playlist/{playlist_id}')
 
 
 if __name__ == '__main__':

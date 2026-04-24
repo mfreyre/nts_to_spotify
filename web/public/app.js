@@ -127,7 +127,22 @@ function appendLog(stream, line) {
   const cls = classifyLine(stream, line);
   const span = document.createElement('span');
   if (cls) span.className = cls;
-  span.textContent = line + '\n';
+  // Auto-link URLs in log output
+  const urlMatch = line.match(/(https?:\/\/[^\s]+)/);
+  if (urlMatch) {
+    const url = urlMatch[1];
+    const idx = line.indexOf(url);
+    span.appendChild(document.createTextNode(line.slice(0, idx)));
+    const a = document.createElement('a');
+    a.href = url;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = url;
+    span.appendChild(a);
+    span.appendChild(document.createTextNode(line.slice(idx + url.length) + '\n'));
+  } else {
+    span.textContent = line + '\n';
+  }
   logEl.appendChild(span);
   logEl.scrollTop = logEl.scrollHeight;
 }

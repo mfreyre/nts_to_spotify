@@ -175,6 +175,9 @@ def add_video_to_playlist(access_token, playlist_id, video_id):
             },
         },
     )
+    if resp.status_code == 409:
+        # Duplicate video in playlist — skip silently
+        return
     resp.raise_for_status()
 
 
