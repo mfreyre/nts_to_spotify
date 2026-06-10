@@ -217,6 +217,110 @@ input[type=text]:focus, select:focus {
 }
 select option { background: var(--deeper); color: var(--paper); }
 
+/* ---------- searchable combo ---------- */
+
+.combo { position: relative; flex: 1; min-width: 0; }
+.combo input { width: 100%; }
+
+.combo-options {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 10;
+  margin: 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--deeper);
+  border: 1px solid rgba(185, 103, 255, 0.5);
+  border-radius: 4px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+}
+.combo-options li {
+  padding: 8px 10px;
+  border-radius: 3px;
+  font-size: 14px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.combo-options li:hover,
+.combo-options li.active {
+  background: rgba(1, 205, 254, 0.15);
+  color: var(--cyan);
+}
+.combo-options li.selected { color: var(--mint); }
+.combo-options li.combo-empty {
+  color: rgba(240, 231, 255, 0.4);
+  cursor: default;
+}
+.combo-options li.combo-empty:hover { background: transparent; color: rgba(240, 231, 255, 0.4); }
+
+.combo-options::-webkit-scrollbar { width: 8px; }
+.combo-options::-webkit-scrollbar-track { background: transparent; }
+.combo-options::-webkit-scrollbar-thumb {
+  background: rgba(255, 113, 206, 0.4);
+  border-radius: 4px;
+}
+
+/* ---------- csv upload ---------- */
+
+.dropzone {
+  padding: 14px 12px;
+  text-align: center;
+  font-family: "VT323", monospace;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgba(240, 231, 255, 0.55);
+  background: rgba(7, 2, 26, 0.5);
+  border: 1px dashed rgba(185, 103, 255, 0.5);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+}
+.dropzone:hover, .dropzone:focus-visible {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  outline: none;
+}
+.dropzone.dragover {
+  border-color: var(--mint);
+  color: var(--mint);
+  background: rgba(5, 255, 161, 0.08);
+}
+.dropzone.uploading { pointer-events: none; opacity: 0.6; }
+
+.upload-progress {
+  margin-top: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(7, 2, 26, 0.8);
+  border: 1px solid rgba(185, 103, 255, 0.4);
+  overflow: hidden;
+}
+.upload-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--cyan), var(--mint));
+  transition: width 0.15s ease;
+}
+.upload-bar.error {
+  background: var(--danger);
+}
+
+.upload-status {
+  margin-top: 8px;
+  font-family: "VT323", monospace;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+}
+.upload-status.ok { color: var(--mint); }
+.upload-status.error { color: var(--danger); }
+
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row > select, .row > input { flex: 1; min-width: 0; }
 
@@ -352,7 +456,36 @@ button.secondary:hover:not(:disabled) {
 #log .stderr  { color: #ff6b9c; }
 #log .found   { color: var(--mint); font-weight: 700; }
 #log .missing { color: #ffaa44; }
+#log .unsure  { color: #ffd93d; font-weight: 700; }
+#log .detail  { color: rgba(240, 231, 255, 0.55); }
 #log .progress { color: var(--cyan); font-weight: 700; }
+
+#log .ask {
+  margin: 4px 0;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 217, 61, 0.5);
+  border-radius: 4px;
+  background: rgba(255, 217, 61, 0.08);
+  color: #ffd93d;
+}
+#log .ask-btn {
+  font-family: "VT323", monospace;
+  font-size: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 2px 10px;
+  margin-left: 8px;
+  background: transparent;
+  color: var(--mint);
+  border: 1px solid rgba(5, 255, 161, 0.5);
+  border-radius: 3px;
+}
+#log .ask-btn:last-child {
+  color: #ffaa44;
+  border-color: rgba(255, 170, 68, 0.5);
+}
+#log .ask-btn:hover:not(:disabled) { background: rgba(5, 255, 161, 0.12); }
+#log .ask-btn:last-child:hover:not(:disabled) { background: rgba(255, 170, 68, 0.12); }
 
 #job-status {
   font-family: "VT323", monospace;

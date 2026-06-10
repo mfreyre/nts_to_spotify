@@ -28,9 +28,19 @@ if (!ytConfigured) {
   console.warn('YouTube credentials not set — YouTube features will be disabled.');
 }
 
+const CLIENT_DIST = path.join(__dirname, 'client', 'dist');
+
 const app = express();
 app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
+app.get('/', (req, res, next) => {
+  if (!fs.existsSync(path.join(CLIENT_DIST, 'index.html'))) {
+    return res
+      .status(503)
+      .send('Client not built. Run "npm run build" in the web/ directory, then reload.');
+  }
+  next();
+});
+app.use(express.static(CLIENT_DIST));
 
 // In-memory single-user token stores.
 let tokenStore = { accessToken: null, refreshToken: null, expiresAt: 0 };
@@ -243,6 +253,57 @@ app.get('/api/csvs', (req, res) => {
   res.json({ files: listCsvFiles() });
 });
 
+// ---------- CSV upload ----------
+
+const UPLOAD_DIR = path.join(REPO_ROOT, '.scratch', 'uploads');
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
+
+// Raw-body upload (no multipart): the file is the request body,
+// the filename comes in as a query param.
+app.post('/api/upload-csv', (req, res) => {
+  const rawName = String(req.query.filename || '');
+  const base = path.basename(rawName).replace(/[^\w.\- ]/g, '_').trim();
+  if (!base.toLowerCase().endsWith('.csv')) {
+    return res.status(400).json({ error: 'Only .csv files are accepted' });
+  }
+
+  const declaredSize = Number(req.headers['content-length'] || 0);
+  if (declaredSize > MAX_UPLOAD_BYTES) {
+    return res.status(413).json({ error: 'File too large (max 10 MB)' });
+  }
+
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+  let target = path.join(UPLOAD_DIR, base);
+  const stem = base.slice(0, -4);
+  for (let i = 2; fs.existsSync(target); i++) {
+    target = path.join(UPLOAD_DIR, `${stem}-${i}.csv`);
+  }
+
+  const out = fs.createWriteStream(target);
+  let received = 0;
+  let failed = false;
+  const fail = (status, message) => {
+    if (failed) return;
+    failed = true;
+    out.destroy();
+    fs.unlink(target, () => {});
+    if (!res.headersSent) res.status(status).json({ error: message });
+  };
+
+  req.on('data', (chunk) => {
+    received += chunk.length;
+    if (received > MAX_UPLOAD_BYTES) fail(413, 'File too large (max 10 MB)');
+  });
+  req.on('aborted', () => fail(400, 'Upload aborted'));
+  out.on('error', (e) => fail(500, `Could not save file: ${e.message}`));
+  out.on('finish', () => {
+    if (failed) return;
+    if (received === 0) return fail(400, 'File is empty');
+    res.json({ path: `.scratch/uploads/${path.basename(target)}`, size: received });
+  });
+  req.pipe(out);
+});
+
 // ---------- Job management ----------
 
 function createJob(proc) {
@@ -376,6 +437,12 @@ app.post('/api/run/show-to-csvs', (req, res) => {
 
 // ---------- Job streaming ----------
 
+app.get('/api/jobs/:id', (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  res.json({ done: job.done, exitCode: job.exitCode });
+});
+
 app.get('/api/jobs/:id/stream', (req, res) => {
   const job = jobs.get(req.params.id);
   if (!job) return res.status(404).end();
@@ -400,6 +467,18 @@ app.get('/api/jobs/:id/stream', (req, res) => {
 
   job.clients.add(res);
   req.on('close', () => job.clients.delete(res));
+});
+
+// Forward a line to the job's stdin (used to answer ASK: prompts).
+app.post('/api/jobs/:id/input', (req, res) => {
+  const job = jobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found' });
+  if (job.done || !job.proc.stdin || !job.proc.stdin.writable) {
+    return res.status(400).json({ error: 'Job is not running' });
+  }
+  const text = String((req.body || {}).text ?? '');
+  job.proc.stdin.write(text + '\n');
+  res.json({ ok: true });
 });
 
 app.post('/api/jobs/:id/stop', (req, res) => {

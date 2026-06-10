@@ -10,6 +10,8 @@ from urllib.parse import urlencode
 import requests
 from dotenv import load_dotenv
 
+from match_utils import ACCEPT_SCORE, REJECT_SCORE, ask_user, similarity
+
 load_dotenv()
 
 client_id = os.getenv('SPOTIFY_CLIENT_ID')
@@ -121,7 +123,7 @@ def _search_request(access_token, query):
         'GET',
         'https://api.spotify.com/v1/search',
         headers={'Authorization': f'Bearer {access_token}'},
-        params={'q': query, 'type': 'track', 'limit': 1},
+        params={'q': query, 'type': 'track', 'limit': 5},
     )
 
 
@@ -140,25 +142,39 @@ def _normalize_for_search(s):
 
 
 def search_track(access_token, title, artist):
-    """Return a Spotify track URI for (title, artist) or None."""
+    """Return the best-scoring candidate for (title, artist) or None.
+
+    Result is a dict with uri, title, artists, and a 0-1 similarity score
+    against the requested track.
+    """
     clean_title = _normalize_for_search(title)
     clean_artist = _normalize_for_search(artist)
 
-    if clean_title != title or clean_artist != artist:
-        print(f'  normalized: "{clean_title}" - "{clean_artist}"', flush=True)
-
+    items = []
     resp = _search_request(access_token, f'track:"{clean_title}" artist:"{clean_artist}"')
     if resp.status_code == 200:
         items = resp.json().get('tracks', {}).get('items', [])
-        if items:
-            return items[0]['uri']
-
-    # Fallback: loose search without field filters
-    resp = _search_request(access_token, f'{clean_title} {clean_artist}')
-    if resp.status_code != 200:
+    if not items:
+        # Fallback: loose search without field filters
+        resp = _search_request(access_token, f'{clean_title} {clean_artist}')
+        if resp.status_code == 200:
+            items = resp.json().get('tracks', {}).get('items', [])
+    if not items:
         return None
-    items = resp.json().get('tracks', {}).get('items', [])
-    return items[0]['uri'] if items else None
+
+    best = None
+    for item in items:
+        got_title = item.get('name', '')
+        got_artists = ', '.join(a.get('name', '') for a in item.get('artists', []))
+        score = 0.6 * similarity(title, got_title) + 0.4 * similarity(artist, got_artists)
+        if best is None or score > best['score']:
+            best = {
+                'uri': item['uri'],
+                'title': got_title,
+                'artists': got_artists,
+                'score': score,
+            }
+    return best
 
 
 def create_playlist(access_token, name, description):
@@ -233,17 +249,37 @@ def main():
     total = len(tracks)
     start = time.time()
     for i, t in enumerate(tracks, 1):
-        uri = search_track(access_token, t['title'], t['artist'])
-        if uri:
-            pending.append(uri)
-            status = 'FOUND    '
+        match = search_track(access_token, t['title'], t['artist'])
+        if match and match['score'] >= ACCEPT_SCORE:
+            pending.append(match['uri'])
+            print(f'[{i}/{total}] FOUND     {t["title"]} - {t["artist"]}', flush=True)
+            print(
+                f'          matched "{match["title"]}" - {match["artists"]} '
+                f'({match["score"]:.0%} similar)',
+                flush=True,
+            )
+        elif match and match['score'] >= REJECT_SCORE:
+            print(f'[{i}/{total}] UNSURE    {t["title"]} - {t["artist"]}', flush=True)
+            print(
+                f'          closest "{match["title"]}" - {match["artists"]} '
+                f'({match["score"]:.0%} similar)',
+                flush=True,
+            )
+            if ask_user(f'add "{match["title"]}" - {match["artists"]} anyway?'):
+                pending.append(match['uri'])
+                print('          -> added', flush=True)
+            else:
+                missing.append(t)
+                print('          -> skipped', flush=True)
         else:
             missing.append(t)
-            status = 'NOT FOUND'
-        print(
-            f'[{i}/{total}] {status} {t["title"]} - {t["artist"]}',
-            flush=True,
-        )
+            print(f'[{i}/{total}] NOT FOUND {t["title"]} - {t["artist"]}', flush=True)
+            if match:
+                print(
+                    f'          best was "{match["title"]}" - {match["artists"]} '
+                    f'({match["score"]:.0%} similar, too different)',
+                    flush=True,
+                )
         if len(pending) >= FLUSH_EVERY:
             add_tracks(access_token, playlist_id, pending)
             total_added += len(pending)

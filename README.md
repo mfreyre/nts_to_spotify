@@ -302,10 +302,11 @@ This creates separate files in `by_year/` for easier batch processing.
 ### Step 4: Create Playlists (Spotify or YouTube)
 
 **Via the web UI (recommended):**
-1. Start the server: `cd web && node server.js`
-2. Open `http://127.0.0.1:4200`
-3. Connect to Spotify or YouTube using the buttons in the UI
-4. Select a CSV, choose your platform, name your playlist, and click "build playlist"
+1. First time (or after changing the frontend): `cd web && npm install && npm run build`
+2. Start the server: `cd web && node server.js`
+3. Open `http://127.0.0.1:4200`
+4. Connect to Spotify or YouTube using the buttons in the UI
+5. Select a CSV, choose your platform, name your playlist, and click "build playlist"
 
 **Via CLI (Spotify):**
 ```bash

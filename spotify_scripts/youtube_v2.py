@@ -1,5 +1,6 @@
 import argparse
 import csv
+import html
 import os
 import re
 import sys
@@ -8,6 +9,8 @@ from urllib.parse import urlencode, quote_plus
 
 import requests
 from dotenv import load_dotenv
+
+from match_utils import ACCEPT_SCORE, REJECT_SCORE, ask_user, similarity, token_coverage
 
 load_dotenv()
 
@@ -106,7 +109,11 @@ def _request_with_retry(method, url, **kwargs):
 
 
 def search_video(access_token, title, artist):
-    """Search YouTube for a video matching title + artist. Returns video ID or None."""
+    """Search YouTube for a video matching title + artist.
+
+    Returns the best-scoring candidate as a dict with videoId, title,
+    channel, and a 0-1 similarity score, or None if nothing came back.
+    """
     clean_title = _normalize_for_search(title)
     clean_artist = _normalize_for_search(artist)
     query = f'{clean_title} {clean_artist}'
@@ -119,16 +126,33 @@ def search_video(access_token, title, artist):
             'part': 'snippet',
             'q': query,
             'type': 'video',
-            'maxResults': 1,
+            'maxResults': 5,
         },
     )
     if resp.status_code != 200:
         return None
 
-    items = resp.json().get('items', [])
-    if items:
-        return items[0]['id']['videoId']
-    return None
+    best = None
+    for item in resp.json().get('items', []):
+        snippet = item.get('snippet', {})
+        got_title = html.unescape(snippet.get('title', ''))
+        channel = html.unescape(snippet.get('channelTitle', ''))
+        # Video titles bundle artist + title in any order ("Artist - Title
+        # (Official Video)"), so score on token coverage of what we want,
+        # letting the channel name stand in for a missing artist credit.
+        want = f'{title} {artist}'
+        score = max(
+            token_coverage(want, f'{got_title} {channel}'),
+            similarity(want, got_title),
+        )
+        if best is None or score > best['score']:
+            best = {
+                'videoId': item['id']['videoId'],
+                'title': got_title,
+                'channel': channel,
+                'score': score,
+            }
+    return best
 
 
 def create_playlist(access_token, name, description):
@@ -225,18 +249,39 @@ def main():
     total = len(tracks)
     start = time.time()
     for i, t in enumerate(tracks, 1):
-        video_id = search_video(access_token, t['title'], t['artist'])
-        if video_id:
-            add_video_to_playlist(access_token, playlist_id, video_id)
+        match = search_video(access_token, t['title'], t['artist'])
+        if match and match['score'] >= ACCEPT_SCORE:
+            add_video_to_playlist(access_token, playlist_id, match['videoId'])
             total_added += 1
-            status = 'FOUND    '
+            print(f'[{i}/{total}] FOUND     {t["title"]} - {t["artist"]}', flush=True)
+            print(
+                f'          matched "{match["title"]}" [{match["channel"]}] '
+                f'({match["score"]:.0%} similar)',
+                flush=True,
+            )
+        elif match and match['score'] >= REJECT_SCORE:
+            print(f'[{i}/{total}] UNSURE    {t["title"]} - {t["artist"]}', flush=True)
+            print(
+                f'          closest "{match["title"]}" [{match["channel"]}] '
+                f'({match["score"]:.0%} similar)',
+                flush=True,
+            )
+            if ask_user(f'add "{match["title"]}" anyway?'):
+                add_video_to_playlist(access_token, playlist_id, match['videoId'])
+                total_added += 1
+                print('          -> added', flush=True)
+            else:
+                missing.append(t)
+                print('          -> skipped', flush=True)
         else:
             missing.append(t)
-            status = 'NOT FOUND'
-        print(
-            f'[{i}/{total}] {status} {t["title"]} - {t["artist"]}',
-            flush=True,
-        )
+            print(f'[{i}/{total}] NOT FOUND {t["title"]} - {t["artist"]}', flush=True)
+            if match:
+                print(
+                    f'          best was "{match["title"]}" [{match["channel"]}] '
+                    f'({match["score"]:.0%} similar, too different)',
+                    flush=True,
+                )
         if i % 50 == 0:
             elapsed = time.time() - start
             rate = i / elapsed if elapsed else 0
