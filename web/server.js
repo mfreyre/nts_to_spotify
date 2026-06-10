@@ -222,8 +222,10 @@ app.get('/api/auth/yt-status', async (req, res) => {
 
 // ---------- CSV listing ----------
 
+// Directories that can't contain the user's CSVs.
+const SKIP_DIRS = new Set(['node_modules', 'web', 'venv', '.venv', 'env', '__pycache__']);
+
 function listCsvFiles() {
-  const scratchDir = path.join(REPO_ROOT, '.scratch');
   const results = [];
   const visit = (dir, relDir) => {
     let entries;
@@ -233,18 +235,19 @@ function listCsvFiles() {
       return;
     }
     for (const entry of entries) {
-      if (entry.name.startsWith('.')) continue;
+      // Skip hidden entries, except .scratch where generated CSVs land.
+      if (entry.name.startsWith('.') && entry.name !== '.scratch') continue;
       const abs = path.join(dir, entry.name);
       const rel = relDir ? `${relDir}/${entry.name}` : entry.name;
       if (entry.isDirectory()) {
-        visit(abs, rel);
+        if (!SKIP_DIRS.has(entry.name)) visit(abs, rel);
       } else if (entry.isFile() && entry.name.toLowerCase().endsWith('.csv')) {
         const stat = fs.statSync(abs);
-        results.push({ path: `.scratch/${rel}`, size: stat.size, mtime: stat.mtimeMs });
+        results.push({ path: rel, size: stat.size, mtime: stat.mtimeMs });
       }
     }
   };
-  visit(scratchDir, '');
+  visit(REPO_ROOT, '');
   results.sort((a, b) => b.mtime - a.mtime);
   return results;
 }
@@ -478,6 +481,12 @@ app.post('/api/jobs/:id/input', (req, res) => {
   }
   const text = String((req.body || {}).text ?? '');
   job.proc.stdin.write(text + '\n');
+  // Record the answer in the job's line buffer so replays (and other tabs)
+  // see the ASK prompt as already answered.
+  const rec = { stream: 'stdin', line: text };
+  job.lines.push(rec);
+  const payload = `event: line\ndata: ${JSON.stringify(rec)}\n\n`;
+  for (const client of job.clients) client.write(payload);
   res.json({ ok: true });
 });
 

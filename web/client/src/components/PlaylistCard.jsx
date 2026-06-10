@@ -1,6 +1,6 @@
-import { useState } from 'react';
 import CsvCombo from './CsvCombo.jsx';
 import UploadZone from './UploadZone.jsx';
+import usePersistentState from '../usePersistentState.js';
 
 export default function PlaylistCard({
   platform,
@@ -15,8 +15,8 @@ export default function PlaylistCard({
   onUploaded,
   onRun,
 }) {
-  const [name, setName] = useState('');
-  const [description, setDescription] = useState('');
+  const [name, setName] = usePersistentState('nts.playlist.name', '');
+  const [description, setDescription] = usePersistentState('nts.playlist.desc', '');
 
   const comboPlaceholder = csvError
     ? `Error: ${csvError}`

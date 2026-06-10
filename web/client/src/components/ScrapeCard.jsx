@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import usePersistentState from '../usePersistentState.js';
 
 const MODES = [
   { value: 'episode', label: 'single episode (URL)' },
@@ -13,9 +13,9 @@ const INPUT_HINTS = {
 };
 
 export default function ScrapeCard({ onRun }) {
-  const [mode, setMode] = useState('episode');
-  const [input, setInput] = useState('');
-  const [output, setOutput] = useState('');
+  const [mode, setMode] = usePersistentState('nts.scrape.mode', 'episode');
+  const [input, setInput] = usePersistentState('nts.scrape.input', '');
+  const [output, setOutput] = usePersistentState('nts.scrape.output', '');
   const hint = INPUT_HINTS[mode];
   const hasOutput = mode !== 'shows';
 

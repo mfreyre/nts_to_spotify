@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import ScrapeCard from './components/ScrapeCard.jsx';
 import PlaylistCard from './components/PlaylistCard.jsx';
 import LogPanel from './components/LogPanel.jsx';
+import usePersistentState from './usePersistentState.js';
 
 export default function App() {
   // ---------- Auth status ----------
@@ -45,13 +46,13 @@ export default function App() {
 
   // ---------- Platform ----------
 
-  const [platform, setPlatform] = useState('spotify');
+  const [platform, setPlatform] = usePersistentState('nts.platform', 'spotify');
 
   // ---------- CSV listing ----------
 
   const [csvFiles, setCsvFiles] = useState([]);
   const [csvError, setCsvError] = useState('');
-  const [selectedCsv, setSelectedCsv] = useState('');
+  const [selectedCsv, setSelectedCsv] = usePersistentState('nts.selectedCsv', '');
 
   const loadCsvs = useCallback(async () => {
     setCsvError('');
@@ -79,6 +80,19 @@ export default function App() {
   const afterDoneRef = useRef(null);
 
   const appendLine = useCallback((stream, line, jobId) => {
+    if (stream === 'stdin') {
+      // An answer reached the job's stdin (from this tab, another tab, or a
+      // replay after reload) — close the ask prompt it was answering.
+      const note = ['y', 'yes'].includes(line.trim().toLowerCase()) ? 'add it' : 'skip';
+      setLogItems((items) => {
+        const idx = items.findLastIndex(
+          (it) => it.kind === 'ask' && (it.state === 'open' || it.state === 'sending'),
+        );
+        if (idx === -1) return items;
+        return items.map((it, i) => (i === idx ? { ...it, state: 'answered', note } : it));
+      });
+      return;
+    }
     const id = nextItemIdRef.current++;
     setLogItems((items) => {
       if (stream === 'stdout' && line.startsWith('ASK: ')) {
@@ -99,6 +113,7 @@ export default function App() {
     src.close();
     if (sourceRef.current === src) sourceRef.current = null;
     jobIdRef.current = null;
+    sessionStorage.removeItem('nts.jobId');
     setJobRunning(false);
     const after = afterDoneRef.current;
     afterDoneRef.current = null;
@@ -107,6 +122,8 @@ export default function App() {
 
   const streamJob = useCallback((jobId) => {
     jobIdRef.current = jobId;
+    sessionStorage.setItem('nts.jobId', jobId);
+    setLogItems([]);
     setJobRunning(true);
     setJobStatus({ text: 'running...', cls: 'running' });
 
@@ -164,7 +181,6 @@ export default function App() {
         }
         return;
       }
-      setLogItems([]);
       afterDoneRef.current = opts.refreshCsvs ? loadCsvs : null;
       streamJob(d.jobId);
     } catch (e) {
@@ -214,6 +230,18 @@ export default function App() {
     refreshSpotifyAuth();
     loadCsvs();
 
+    // If a job was running before the page navigated away (OAuth round-trip,
+    // reload), re-attach to it — the server replays its buffered log lines.
+    const savedJob = sessionStorage.getItem('nts.jobId');
+    if (savedJob) {
+      fetch(`/api/jobs/${savedJob}`)
+        .then((r) => {
+          if (r.ok) streamJob(savedJob);
+          else sessionStorage.removeItem('nts.jobId');
+        })
+        .catch(() => {});
+    }
+
     const params = new URLSearchParams(location.search);
     // If we just came back from an OAuth callback, strip the query param.
     if (params.get('auth') === 'ok') history.replaceState(null, '', '/');
@@ -232,7 +260,7 @@ export default function App() {
       document.removeEventListener('dragover', prevent);
       document.removeEventListener('drop', prevent);
     };
-  }, [refreshSpotifyAuth, refreshYtAuth, loadCsvs]);
+  }, [refreshSpotifyAuth, refreshYtAuth, loadCsvs, streamJob]);
 
   return (
     <>
