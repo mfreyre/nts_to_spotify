@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import ScrapeCard from './components/ScrapeCard.jsx';
 import PlaylistCard from './components/PlaylistCard.jsx';
+import PartitionCard from './components/PartitionCard.jsx';
 import LogPanel from './components/LogPanel.jsx';
 import usePersistentState from './usePersistentState.js';
 
@@ -297,6 +298,7 @@ export default function App() {
           onUploaded={handleUploaded}
           onRun={runJob}
         />
+        <PartitionCard onRun={runJob} />
         <LogPanel
           items={logItems}
           status={jobStatus}

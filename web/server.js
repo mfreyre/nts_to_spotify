@@ -11,7 +11,7 @@ const PORT = Number(process.env.WEB_PORT || 4200);
 const CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
 const CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 const REDIRECT_URI = process.env.SPOTIFY_REDIRECT_URI || `http://127.0.0.1:${PORT}/callback`;
-const SCOPE = 'playlist-modify-public playlist-modify-private';
+const SCOPE = 'playlist-modify-public playlist-modify-private playlist-read-private playlist-read-collaborative';
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error('Missing SPOTIFY_CLIENT_ID / SPOTIFY_CLIENT_SECRET in .env');
@@ -409,6 +409,30 @@ app.post('/api/run/youtube', async (req, res) => {
       '--description', description || '',
     ],
     { YOUTUBE_ACCESS_TOKEN: token },
+  );
+  res.json({ jobId });
+});
+
+app.post('/api/run/partition', async (req, res) => {
+  const { platform, link, parts } = req.body || {};
+  if (platform && platform !== 'spotify') {
+    return res.status(400).json({ error: 'Only Spotify partitioning is supported for now' });
+  }
+  const n = Number(parts);
+  if (!link || !Number.isInteger(n) || n < 2 || n > 100) {
+    return res.status(400).json({ error: 'link and parts (a whole number from 2 to 100) are required' });
+  }
+  const token = await getValidAccessToken();
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated with Spotify' });
+  }
+  const jobId = spawnPython(
+    [
+      'spotify_scripts/partition_playlist.py',
+      '--playlist', String(link),
+      '--parts', String(n),
+    ],
+    { SPOTIFY_ACCESS_TOKEN: token },
   );
   res.json({ jobId });
 });
