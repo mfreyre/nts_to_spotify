@@ -36,6 +36,14 @@ logging.basicConfig(
     ]
 )
 
+def extract_show_slug(input_str: str) -> str:
+    """Extract the show slug from a URL or return as-is if already a slug."""
+    match = re.search(r'nts\.live/shows/([^/?#]+)', input_str)
+    if match:
+        return match.group(1)
+    return input_str.strip().strip('/')
+
+
 def clean_string(s: str) -> str:
     """
     Clean and normalize track/artist strings.
@@ -204,7 +212,7 @@ def main():
         print("  python nts_show_to_csv.py miss-modular miss_modular_complete.csv")
         sys.exit(1)
 
-    show_name = sys.argv[1]
+    show_name = extract_show_slug(sys.argv[1])
     if len(sys.argv) > 2:
         output_file = sys.argv[2]
     else:
