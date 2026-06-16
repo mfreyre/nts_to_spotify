@@ -7,7 +7,7 @@ from difflib import SequenceMatcher
 # Candidates between REJECT_SCORE and ACCEPT_SCORE trigger an ask_user()
 # confirmation. Anything below REJECT_SCORE is treated as not found.
 ACCEPT_SCORE = 0.70
-REJECT_SCORE = 0.30
+REJECT_SCORE = 0.70
 
 
 def norm(s):

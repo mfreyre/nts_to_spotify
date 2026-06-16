@@ -1,11 +1,30 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { NavLink, Navigate, Route, Routes, useNavigate } from 'react-router-dom';
 import ScrapeCard from './components/ScrapeCard.jsx';
 import PlaylistCard from './components/PlaylistCard.jsx';
 import PartitionCard from './components/PartitionCard.jsx';
+import DedupCard from './components/DedupCard.jsx';
 import LogPanel from './components/LogPanel.jsx';
 import usePersistentState from './usePersistentState.js';
 
+const PAGES = [
+  { to: '/scrape', label: 'scrape nts' },
+  { to: '/build', label: 'build playlist' },
+  { to: '/partition', label: 'partition' },
+  { to: '/dedupe', label: 'de-dupe' },
+];
+
 export default function App() {
+  const navigate = useNavigate();
+
+  // The OAuth round-trip lands us on "/?auth=ok"; capture the query during the
+  // first render, before the router (or our own cleanup) can strip it.
+  const initialSearch = useRef(window.location.search);
+
+  // ---------- Hamburger nav ----------
+
+  const [navOpen, setNavOpen] = useState(false);
+
   // ---------- Auth status ----------
 
   const [spotifyAuth, setSpotifyAuth] = useState({
@@ -218,6 +237,15 @@ export default function App() {
     }
   }, []);
 
+  // ---------- Connect (OAuth) ----------
+
+  // Remember the current page so the OAuth round-trip returns here instead of
+  // always dumping the user on /build.
+  const connect = useCallback((service) => {
+    sessionStorage.setItem('nts.returnTo', window.location.pathname);
+    window.location.href = service === 'youtube' ? '/api/auth/youtube' : '/api/auth/spotify';
+  }, []);
+
   // ---------- Upload ----------
 
   const handleUploaded = useCallback(async (path) => {
@@ -243,13 +271,22 @@ export default function App() {
         .catch(() => {});
     }
 
-    const params = new URLSearchParams(location.search);
-    // If we just came back from an OAuth callback, strip the query param.
-    if (params.get('auth') === 'ok') history.replaceState(null, '', '/');
-    if (params.get('ytauth') === 'ok') history.replaceState(null, '', '/');
+    const params = new URLSearchParams(initialSearch.current);
+    // If we just came back from an OAuth callback, drop the query param by
+    // routing back to whatever page the user kicked the connect off from
+    // (saved before the redirect; falls back to /build).
+    const popReturnTo = () => {
+      const back = sessionStorage.getItem('nts.returnTo') || '/build';
+      sessionStorage.removeItem('nts.returnTo');
+      return back;
+    };
+    if (params.get('auth') === 'ok') navigate(popReturnTo(), { replace: true });
     refreshYtAuth().then((d) => {
-      // Back from the YouTube OAuth callback: auto-select YouTube.
-      if (params.get('ytauth') === 'ok' && d.configured) setPlatform('youtube');
+      // Back from the YouTube OAuth callback: auto-select YouTube, then return.
+      if (params.get('ytauth') === 'ok') {
+        if (d.configured) setPlatform('youtube');
+        navigate(popReturnTo(), { replace: true });
+      }
     });
 
     // A drop outside the dropzone would navigate the browser to the file —
@@ -261,7 +298,12 @@ export default function App() {
       document.removeEventListener('dragover', prevent);
       document.removeEventListener('drop', prevent);
     };
-  }, [refreshSpotifyAuth, refreshYtAuth, loadCsvs, streamJob]);
+    // Bootstrap once on mount. Notably NOT depending on `navigate`: react-router
+    // gives it a fresh identity on every location change, so listing it here
+    // would re-run this effect after each navigation and re-fire the one-shot
+    // OAuth redirect, hijacking every nav click back to the landing page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return (
     <>
@@ -272,33 +314,90 @@ export default function App() {
       </div>
 
       <header>
+        <button
+          type="button"
+          className={`hamburger${navOpen ? ' open' : ''}`}
+          aria-label="Toggle menu"
+          aria-expanded={navOpen}
+          onClick={() => setNavOpen((o) => !o)}
+        >
+          <span></span>
+          <span></span>
+          <span></span>
+        </button>
         <h1>
           <span className="logo-main">nts</span>
           <span className="logo-arrow">&#8594;</span>
           <span className="logo-sub">spotify</span>
         </h1>
         <div className="auth-pills">
-          <div className={`auth ${spotifyAuth.cls}`}>{spotifyAuth.label}</div>
-          <div className={`auth ${ytAuth.cls}`}>{ytAuth.label}</div>
+          <button
+            type="button"
+            className={`auth auth-btn ${spotifyAuth.cls}`}
+            title={spotifyAuth.connected ? 'Reconnect Spotify' : 'Connect Spotify'}
+            onClick={() => connect('spotify')}
+          >
+            {spotifyAuth.cls === 'bad' ? 'connect spotify' : spotifyAuth.label}
+          </button>
+          {ytAuth.configured ? (
+            <button
+              type="button"
+              className={`auth auth-btn ${ytAuth.cls}`}
+              title={ytAuth.connected ? 'Reconnect YouTube' : 'Connect YouTube'}
+              onClick={() => connect('youtube')}
+            >
+              {ytAuth.cls === 'bad' ? 'connect youtube' : ytAuth.label}
+            </button>
+          ) : (
+            <div className={`auth ${ytAuth.cls}`}>{ytAuth.label}</div>
+          )}
         </div>
       </header>
 
+      {navOpen && <div className="nav-scrim" onClick={() => setNavOpen(false)} />}
+      <nav className={`side-nav${navOpen ? ' open' : ''}`}>
+        {PAGES.map((p) => (
+          <NavLink
+            key={p.to}
+            to={p.to}
+            className={({ isActive }) => `nav-link${isActive ? ' active' : ''}`}
+            onClick={() => setNavOpen(false)}
+          >
+            {p.label}
+          </NavLink>
+        ))}
+      </nav>
+
       <main>
-        <ScrapeCard onRun={runJob} />
-        <PlaylistCard
-          platform={platform}
-          onPlatformChange={setPlatform}
-          spotifyAuth={spotifyAuth}
-          ytAuth={ytAuth}
-          csvFiles={csvFiles}
-          csvError={csvError}
-          selectedCsv={selectedCsv}
-          onSelectCsv={setSelectedCsv}
-          onRefreshCsvs={loadCsvs}
-          onUploaded={handleUploaded}
-          onRun={runJob}
-        />
-        <PartitionCard onRun={runJob} />
+        <Routes>
+          <Route path="/" element={<Navigate to="/scrape" replace />} />
+          <Route path="/scrape" element={<ScrapeCard onRun={runJob} />} />
+          <Route
+            path="/build"
+            element={(
+              <PlaylistCard
+                platform={platform}
+                onPlatformChange={setPlatform}
+                spotifyAuth={spotifyAuth}
+                ytAuth={ytAuth}
+                csvFiles={csvFiles}
+                csvError={csvError}
+                selectedCsv={selectedCsv}
+                onSelectCsv={setSelectedCsv}
+                onRefreshCsvs={loadCsvs}
+                onUploaded={handleUploaded}
+                onConnect={connect}
+                onRun={runJob}
+              />
+            )}
+          />
+          <Route path="/partition" element={<PartitionCard onRun={runJob} />} />
+          <Route path="/dedupe" element={<DedupCard onRun={runJob} />} />
+          <Route path="*" element={<Navigate to="/scrape" replace />} />
+        </Routes>
+
+        {/* Shared across every page so a running job stays visible while you
+            navigate between tools. */}
         <LogPanel
           items={logItems}
           status={jobStatus}

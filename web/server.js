@@ -437,6 +437,24 @@ app.post('/api/run/partition', async (req, res) => {
   res.json({ jobId });
 });
 
+app.post('/api/run/dedup', async (req, res) => {
+  const { platform, link, nearDuplicates } = req.body || {};
+  if (platform && platform !== 'spotify') {
+    return res.status(400).json({ error: 'Only Spotify dedup is supported for now' });
+  }
+  if (!link) {
+    return res.status(400).json({ error: 'link is required' });
+  }
+  const token = await getValidAccessToken();
+  if (!token) {
+    return res.status(401).json({ error: 'Not authenticated with Spotify' });
+  }
+  const args = ['spotify_scripts/dedup_playlist.py', '--playlist', String(link)];
+  if (nearDuplicates) args.push('--near-duplicates');
+  const jobId = spawnPython(args, { SPOTIFY_ACCESS_TOKEN: token });
+  res.json({ jobId });
+});
+
 app.post('/api/run/episode-to-csv', (req, res) => {
   const { url, output } = req.body || {};
   if (!url) return res.status(400).json({ error: 'url is required' });
@@ -519,6 +537,24 @@ app.post('/api/jobs/:id/stop', (req, res) => {
   if (!job) return res.status(404).json({ error: 'Job not found' });
   if (!job.done && job.proc) job.proc.kill('SIGTERM');
   res.json({ ok: true });
+});
+
+// ---------- SPA fallback ----------
+
+// Client-side routing (react-router) means deep links like /dedupe are served
+// by the app, not the server. Hand any non-API GET to index.html and let the
+// router resolve it. Unmatched /api routes get a JSON 404 instead of HTML.
+app.get('*', (req, res) => {
+  if (req.path.startsWith('/api/')) {
+    return res.status(404).json({ error: 'Not found' });
+  }
+  const indexHtml = path.join(CLIENT_DIST, 'index.html');
+  if (!fs.existsSync(indexHtml)) {
+    return res
+      .status(503)
+      .send('Client not built. Run "npm run build" in the web/ directory, then reload.');
+  }
+  res.sendFile(indexHtml);
 });
 
 // ---------- Start ----------

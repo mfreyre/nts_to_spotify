@@ -13,6 +13,7 @@ export default function PlaylistCard({
   onSelectCsv,
   onRefreshCsvs,
   onUploaded,
+  onConnect,
   onRun,
 }) {
   const [name, setName] = usePersistentState('nts.playlist.name', '');
@@ -100,17 +101,11 @@ export default function PlaylistCard({
       <div className="row">
         <button onClick={build}>build playlist &rarr;</button>
         {platform === 'spotify' ? (
-          <button
-            className="secondary"
-            onClick={() => { window.location.href = '/api/auth/spotify'; }}
-          >
+          <button className="secondary" onClick={() => onConnect('spotify')}>
             {spotifyAuth.connected ? 'reconnect spotify' : 'connect spotify'}
           </button>
         ) : (
-          <button
-            className="secondary"
-            onClick={() => { window.location.href = '/api/auth/youtube'; }}
-          >
+          <button className="secondary" onClick={() => onConnect('youtube')}>
             {ytAuth.connected ? 'reconnect youtube' : 'connect youtube'}
           </button>
         )}
