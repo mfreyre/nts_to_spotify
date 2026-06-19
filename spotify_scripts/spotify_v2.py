@@ -19,17 +19,36 @@ client_secret = os.getenv('SPOTIFY_CLIENT_SECRET')
 redirect_uri = os.getenv('SPOTIFY_REDIRECT_URI', 'http://localhost:8000/callback/')
 
 
+# Accepted column names (case-insensitive) for each field.
+TITLE_ALIASES = ('title', 'track name', 'track', 'song', 'song name', 'name')
+ARTIST_ALIASES = ('artist', 'artists', 'artist name', 'by')
+
+
+def _pick_column(field_map, aliases):
+    """Return the actual column name for the first matching alias, or None."""
+    for alias in aliases:
+        if alias in field_map:
+            return field_map[alias]
+    return None
+
+
 def read_csv_tracks(path):
-    """Read a CSV with TITLE,ARTIST columns (case-insensitive)."""
+    """Read a CSV with title/artist columns (case-insensitive).
+
+    Title column may be named any of TITLE_ALIASES; artist column any of
+    ARTIST_ALIASES.
+    """
     tracks = []
     with open(path, newline='', encoding='utf-8') as f:
         reader = csv.DictReader(f)
         field_map = {name.lower(): name for name in reader.fieldnames or []}
-        if 'title' not in field_map or 'artist' not in field_map:
+        title_col = _pick_column(field_map, TITLE_ALIASES)
+        artist_col = _pick_column(field_map, ARTIST_ALIASES)
+        if not title_col or not artist_col:
             raise ValueError(
-                f"CSV must have TITLE and ARTIST columns. Found: {reader.fieldnames}"
+                f"CSV must have a title column ({'/'.join(TITLE_ALIASES)}) and an "
+                f"artist column ({'/'.join(ARTIST_ALIASES)}). Found: {reader.fieldnames}"
             )
-        title_col, artist_col = field_map['title'], field_map['artist']
         for row in reader:
             title = (row.get(title_col) or '').strip()
             artist = (row.get(artist_col) or '').strip().rstrip(',')
