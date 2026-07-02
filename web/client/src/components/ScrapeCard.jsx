@@ -12,6 +12,13 @@ const INPUT_HINTS = {
   shows: { label: 'show slug or URL', placeholder: 'the-breakfast-show-flo' },
 };
 
+// 'episode' for episode URLs, 'show' for show URLs, null when it's a slug or not an NTS URL
+function detectModeFromUrl(value) {
+  if (/nts\.live\/shows\/[^/?#]+\/episodes\/./.test(value)) return 'episode';
+  if (/nts\.live\/shows\/[^/?#]+/.test(value)) return 'show';
+  return null;
+}
+
 export default function ScrapeCard({ onRun }) {
   const [mode, setMode] = usePersistentState('nts.scrape.mode', 'episode');
   const [input, setInput] = usePersistentState('nts.scrape.input', '');
@@ -19,10 +26,30 @@ export default function ScrapeCard({ onRun }) {
   const hint = INPUT_HINTS[mode];
   const hasOutput = mode !== 'shows';
 
+  const handleInput = (value) => {
+    setInput(value);
+    const detected = detectModeFromUrl(value.trim());
+    if (detected === 'episode' && mode !== 'episode') {
+      setMode('episode');
+    } else if (detected === 'show' && mode === 'episode') {
+      // can't tell 'show' vs 'shows' apart from the URL, so only switch away from episode
+      setMode('show');
+    }
+  };
+
   const run = () => {
     const value = input.trim();
     if (!value) {
       alert('Please enter a URL or show slug');
+      return;
+    }
+    const detected = detectModeFromUrl(value);
+    if (mode === 'episode' && detected === 'show') {
+      alert('That looks like a show URL, not an episode URL — pick one of the "full show" modes.');
+      return;
+    }
+    if (mode !== 'episode' && detected === 'episode') {
+      alert('That looks like a single episode URL — pick the "single episode" mode.');
       return;
     }
     let endpoint, body;
@@ -67,7 +94,7 @@ export default function ScrapeCard({ onRun }) {
           id="nts-input"
           placeholder={hint.placeholder}
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => handleInput(e.target.value)}
         />
       </div>
       {hasOutput && (

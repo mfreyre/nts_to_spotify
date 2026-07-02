@@ -100,6 +100,12 @@ def episode_to_csv(episode_url: str, output_file: str = None) -> str:
     Returns:
         Path to the created CSV file
     """
+    if 'nts.live/shows/' in episode_url and '/episodes/' not in episode_url:
+        print(f"That looks like a show URL, not an episode URL: {episode_url}")
+        print("To scrape a whole show, use:")
+        print(f"  python nts_show_to_csv.py {episode_url}")
+        return None
+
     # Auto-generate filename from URL if not provided
     if not output_file:
         # Extract episode name from URL
