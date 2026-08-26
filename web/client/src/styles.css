@@ -550,6 +550,31 @@ button.auth-btn:hover {
   flex-shrink: 0;
 }
 
+/* ---------- enrich card ---------- */
+
+.hint {
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 14px;
+  color: var(--paper);
+  opacity: 0.75;
+  margin: -4px 0 14px;
+}
+
+.export-list {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  font-family: "Space Grotesk", sans-serif;
+  font-size: 15px;
+}
+.export-list li { margin: 3px 0; }
+.export-list a {
+  color: var(--cyan);
+  text-decoration: none;
+  border-bottom: 1px dashed rgba(1, 205, 254, 0.5);
+}
+.export-list a:hover { color: var(--pink); border-bottom-color: var(--pink); }
+
 /* ---------- hamburger button ---------- */
 
 .hamburger {

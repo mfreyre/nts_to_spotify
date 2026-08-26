@@ -4,6 +4,7 @@ import ScrapeCard from './components/ScrapeCard.jsx';
 import PlaylistCard from './components/PlaylistCard.jsx';
 import PartitionCard from './components/PartitionCard.jsx';
 import DedupCard from './components/DedupCard.jsx';
+import EnrichCard from './components/EnrichCard.jsx';
 import LogPanel from './components/LogPanel.jsx';
 import usePersistentState from './usePersistentState.js';
 
@@ -12,6 +13,7 @@ const PAGES = [
   { to: '/build', label: 'build playlist' },
   { to: '/partition', label: 'partition' },
   { to: '/dedupe', label: 'de-dupe' },
+  { to: '/enrich', label: 'enrich csv' },
 ];
 
 export default function App() {
@@ -393,6 +395,7 @@ export default function App() {
           />
           <Route path="/partition" element={<PartitionCard onRun={runJob} />} />
           <Route path="/dedupe" element={<DedupCard onRun={runJob} />} />
+          <Route path="/enrich" element={<EnrichCard csvFiles={csvFiles} onRun={runJob} />} />
           <Route path="*" element={<Navigate to="/scrape" replace />} />
         </Routes>
 

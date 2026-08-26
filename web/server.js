@@ -256,6 +256,16 @@ app.get('/api/csvs', (req, res) => {
   res.json({ files: listCsvFiles() });
 });
 
+app.get('/api/download', (req, res) => {
+  const rel = String(req.query.path || '');
+  const abs = path.resolve(REPO_ROOT, rel);
+  if (!abs.startsWith(REPO_ROOT + path.sep) || !abs.toLowerCase().endsWith('.csv')
+      || !fs.existsSync(abs)) {
+    return res.status(404).json({ error: 'File not found' });
+  }
+  res.download(abs);
+});
+
 // ---------- CSV upload ----------
 
 const UPLOAD_DIR = path.join(REPO_ROOT, '.scratch', 'uploads');
@@ -452,6 +462,25 @@ app.post('/api/run/dedup', async (req, res) => {
   const args = ['spotify_scripts/dedup_playlist.py', '--playlist', String(link)];
   if (nearDuplicates) args.push('--near-duplicates');
   const jobId = spawnPython(args, { SPOTIFY_ACCESS_TOKEN: token });
+  res.json({ jobId });
+});
+
+app.post('/api/run/enrich', async (req, res) => {
+  const { link, skipDetails, noPreviewFallback } = req.body || {};
+  if (!link) {
+    return res.status(400).json({ error: 'link is required' });
+  }
+  const args = [
+    'spotify_scripts/playlist_to_enriched_csv.py',
+    '--playlist', String(link),
+    '--output-dir', '.scratch/enriched',
+  ];
+  if (skipDetails) args.push('--skip-details');
+  if (noPreviewFallback) args.push('--no-preview-fallback');
+  // A user token lets the script read private playlists; without one it
+  // falls back to client-credentials, which covers public playlists.
+  const token = await getValidAccessToken();
+  const jobId = spawnPython(args, token ? { SPOTIFY_ACCESS_TOKEN: token } : {});
   res.json({ jobId });
 });
 
